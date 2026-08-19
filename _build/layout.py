@@ -180,6 +180,18 @@ def page(title, description, body, canonical="/", base="", indexable=True):
 """
 
 
+NOTFOUND_SCRIPT = """<script>
+// On the custom domain the root-absolute href above is already right. On the
+// ahdis.github.io preview the site lives under /<repo>/, so point at that
+// instead -- without this the only link on the page leaves the project.
+(function () {
+  if (!location.hostname.endsWith("github.io")) return;
+  var repo = location.pathname.split("/")[1];
+  if (repo) document.getElementById("home").href = "/" + repo + "/";
+}());
+</script>"""
+
+
 def standalone(title, description, css):
     """A page that must render correctly at ANY depth: GitHub Pages serves
     404.html for every missing path, so it can carry no relative asset links.
@@ -205,16 +217,7 @@ def standalone(title, description, css):
      rebuilt.</p>
   <p><a class="button" id="home" href="/">Back to Overview</a></p>
 </main>
-<script>
-// On the custom domain the root-absolute href above is already right. On the
-// ahdis.github.io preview the site lives under /<repo>/, so point at that
-// instead -- without this the only link on the page leaves the project.
-(function () {
-  if (!location.hostname.endsWith("github.io")) return;
-  var repo = location.pathname.split("/")[1];
-  if (repo) document.getElementById("home").href = "/" + repo + "/";
-}());
-</script>
+{NOTFOUND_SCRIPT}
 </body>
 </html>
 """

@@ -82,19 +82,28 @@ readings).
 
 ## Going live
 
-Not done yet — cutover is a deliberate, separate step:
+**Published for review at <https://ahdis.github.io/matchbox.health/>** — Pages
+serves `main` / root. `www.matchbox.health` is still Squarespace; DNS has not
+been touched and no `CNAME` file exists.
 
-1. Enable Pages on `main` / root; verify at `ahdis.github.io/matchbox.health/`.
-2. Add a `CNAME` file containing `www.matchbox.health`.
-3. DNS: apex A records to `185.199.108.153`, `.109.153`, `.110.153`, `.111.153`;
+The repo is **public** because it has to be: the ahdis org is on the free plan,
+which only serves Pages from public repos. `ahdis/matchbox` publishes its mkdocs
+at `ahdis.github.io/matchbox/` with no CNAME, so there is no collision.
+
+Remaining steps, whenever you want to cut over:
+
+1. Add a `CNAME` file containing `www.matchbox.health`.
+2. DNS: apex A records to `185.199.108.153`, `.109.153`, `.110.153`, `.111.153`;
    `www` CNAME to `ahdis.github.io`. Currently `www` is a CNAME to
    `ext-cust.squarespace.com`.
-4. Wait for the certificate, then enable **Enforce HTTPS**.
-5. Verify, *then* cancel Squarespace.
+3. Wait for the certificate, then enable **Enforce HTTPS**.
+4. Verify, *then* cancel Squarespace.
 
-The repo must be **public**: the ahdis org is on the free plan, which only serves
-Pages from public repos. `ahdis/matchbox` already publishes its mkdocs at
-`ahdis.github.io/matchbox/` with no CNAME, so there is no collision.
+One thing to know while reviewing on the `ahdis.github.io` URL: `404.html` has
+to work at any depth, so its stylesheet is inlined and its font references are
+root-absolute. On the preview URL those two fonts 404 and the page falls back to
+Helvetica; on the custom domain it renders in Poppins. Its single link
+self-corrects for the preview prefix.
 
 ## Licence
 
