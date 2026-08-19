@@ -1,0 +1,364 @@
+/* www.matchbox.health -- rebuilt from the Squarespace 7.1 original.
+   Every number here was measured off the live site (see _design/DESIGN-NOTES.md);
+   none of the 1.3MB theme bundle is shipped.
+
+   Two things drive the whole layout and are worth reading first:
+
+   1. The fluid type scale is `16px + N x unit`, where the unit is vmax below
+      768px and vw at 768px and above. The coefficients N are identical in both
+      regimes -- only the unit switches -- so one custom property (--u) flips the
+      entire scale. Section padding, by contrast, is vmax at EVERY width.
+
+   2. Squarespace's classic layout is a 12-column row with `margin: 0 -17px` and
+      17px of padding on each block. Reproducing that inset makes the measured
+      column widths fall out exactly, so it is kept rather than approximated. */
+
+/* ---- tokens ------------------------------------------------------------ */
+:root {
+  /* The palette names in the original lie: `--black` is a slate blue and
+     `--accent` a teal. These are the round-tripped computed values. */
+  --dark:  #3d5c73;   /* darkAccent  -- hero and footer ground */
+  --mint:  #97d6ba;   /* lightAccent -- header band, tagline band */
+  --slate: #5a728a;   /* "black"     -- body copy on white */
+  --teal:  #61a2ab;   /* accent      -- buttons, links, features panel */
+  --white: #fff;
+
+  --gutter: 6vw;      /* site gutter below 768 */
+  --inset: 5vw;       /* inset-background sections use 5vw at every width */
+  --u: 1vmax;         /* fluid type unit below 768 */
+  --block: 17px;      /* the classic-layout block inset */
+
+  --fs-hero:    calc(16px + 0.48 * var(--u));
+  --fs-display: calc(16px + 1.80 * var(--u));
+  --fs-title:   calc(16px + 1.08 * var(--u));
+  --fs-card:    calc(16px + 0.84 * var(--u));
+  --fs-body:    calc(16px + 0.12 * var(--u));
+  --line-body:  calc(var(--fs-body) * 1.5);
+
+  --header-pad: 6vw;
+  --logo-w: 121px;
+  --logo-h: 51px;
+  --header-inner: 54px;
+  --header-h: calc(var(--header-pad) * 2 + var(--header-inner));
+}
+
+@media (min-width: 768px) {
+  :root { --gutter: 5vw; --u: 1vw; }
+}
+
+/* The header switches to its desktop layout at 800px -- a different breakpoint
+   from the type scale's 768px. Both were measured; they really do differ. */
+@media (min-width: 800px) {
+  :root {
+    --header-pad: 2.7vw;   /* vw, not vmax: confirmed at 800x900 */
+    --logo-w: 258px; --logo-h: 109px; --header-inner: 109px;
+  }
+}
+
+/* ---- fonts ------------------------------------------------------------- */
+@font-face { font-family: Poppins; font-style: normal; font-weight: 400; font-display: swap;
+  src: url(../fonts/poppins-400-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: Poppins; font-style: normal; font-weight: 400; font-display: swap;
+  src: url(../fonts/poppins-400-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: Poppins; font-style: normal; font-weight: 500; font-display: swap;
+  src: url(../fonts/poppins-500-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: Poppins; font-style: normal; font-weight: 500; font-display: swap;
+  src: url(../fonts/poppins-500-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: Poppins; font-style: normal; font-weight: 700; font-display: swap;
+  src: url(../fonts/poppins-700-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: Poppins; font-style: normal; font-weight: 700; font-display: swap;
+  src: url(../fonts/poppins-700-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+
+/* ---- base -------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--white); color: var(--slate);
+  font-family: Poppins, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: var(--fs-body); font-weight: 400; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; }
+p { margin: 0; }
+h1, h2, h3, h4 { margin: 0; font-weight: 500; }
+h1, h2, h3, h4, p, li, address { overflow-wrap: break-word; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--teal); color: var(--white); padding: 13px 21px;
+  border-radius: 6.4px; font-weight: 500;
+}
+.skip-link:focus { left: var(--gutter); top: 12px; }
+:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+/* ---- the classic 12-column row ---------------------------------------- */
+.row { display: grid; grid-template-columns: 1fr; margin: 0 calc(var(--block) * -1); }
+.block { padding: var(--block); }
+.block--flush-x { padding: 0 var(--block); }
+
+/* ---- sections ---------------------------------------------------------- */
+.section { position: relative; }
+.section--dark  { background: var(--dark);  color: var(--white); }
+.section--white { background: var(--white); color: var(--slate); }
+.section--mint  { background: var(--mint);  color: var(--slate); }
+.wrap { padding-left: var(--gutter); padding-right: var(--gutter); }
+/* content-width--medium is 100% below 768 and 75% of the gutter box above it */
+@media (min-width: 768px) {
+  .wrap--medium > .row { width: calc(75% + var(--block) * 2); margin-left: auto; margin-right: auto; }
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+.button {
+  display: inline-block; text-decoration: none; font-weight: 500;
+  background: var(--teal); color: var(--white);
+  padding: 14.4px 24.048px; border-radius: 6.4px;
+  font-size: 16px; letter-spacing: 0.02em;
+}
+.button--fluid { font-size: var(--fs-body); padding: 0.9em 1.503em; }
+.button--onteal { background: var(--white); color: var(--teal); }
+.button--dark { background: var(--dark); }
+.button:hover { opacity: 0.85; }
+
+/* ---- header ------------------------------------------------------------ */
+/* The coloured band is a real element on the original (a painted child of the
+   header, not the header itself). Here the header simply carries the colour. */
+.header {
+  position: absolute; inset: 0 0 auto; z-index: 20;
+  background: var(--mint); padding: var(--header-pad) var(--gutter);
+}
+@media (min-width: 800px) { .header { padding: var(--header-pad) var(--inset); } }
+.header__inner {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: var(--header-inner);
+}
+.header__logo { display: block; flex: none; }
+.header__logo img { width: var(--logo-w); height: var(--logo-h); }
+.header__nav { display: none; }
+.header__nav ul { display: flex; list-style: none; margin: 0; padding: 0; gap: 2.2vmax; }
+.header__nav a {
+  display: block; padding: 1.6px 0; text-decoration: none;
+  font-size: 16px; font-weight: 500; line-height: 1.5; color: var(--dark);
+}
+.header__nav a:hover { opacity: 0.7; }
+
+/* The menu control is a plus that rotates into a cross -- not a hamburger. */
+.header__toggle {
+  width: 50px; height: 37px; padding: 0; border: 0; background: none;
+  cursor: pointer; position: relative; flex: none;
+}
+.header__toggle-icon, .header__toggle-icon::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 26px; height: 2px; background: var(--dark);
+  transform: translate(-50%, -50%); transition: transform 0.3s ease;
+}
+.header__toggle-icon::before { transform: translate(-50%, -50%) rotate(90deg); }
+.header__toggle[aria-expanded="true"] .header__toggle-icon { transform: translate(-50%, -50%) rotate(45deg); }
+/* once open, the bars sit on the dark overlay rather than the mint band */
+.header__toggle[aria-expanded="true"] .header__toggle-icon,
+.header__toggle[aria-expanded="true"] .header__toggle-icon::before { background: var(--white); }
+
+@media (min-width: 800px) {
+  .header__nav { display: block; }
+  .header__toggle { display: none; }
+}
+
+/* ---- mobile menu overlay ---------------------------------------------- */
+/* Its colours come from the overlay's own `dark` theme, not from the header. */
+.menu {
+  position: fixed; inset: 0; z-index: 15;
+  background: var(--dark); color: var(--white);
+  padding-top: var(--header-h);
+  display: flex; align-items: center; justify-content: center;
+  overflow-y: auto;
+}
+.menu[hidden] { display: none; }
+.menu__nav { width: 100%; }
+.menu__nav ul { list-style: none; margin: 0; padding: 0; text-align: center; }
+.menu__nav a {
+  display: inline-block; margin: 11.7px 19.5px; text-decoration: none;
+  font-size: 8.5vmin; line-height: 1; font-weight: 500; color: var(--white);
+}
+@media (min-width: 600px) { .menu__nav a { font-size: 6.6vmin; } }
+@media (min-width: 768px) { .menu__nav a { font-size: 6vmin; } }
+@media (min-width: 800px) { .menu { display: none; } }
+body.is-menu-open { overflow: hidden; }
+body.is-menu-open .header { background: transparent; }
+
+/* ---- hero -------------------------------------------------------------- */
+.hero { padding-top: var(--header-h); }
+.hero__inner { padding-top: 3.3vmax; padding-bottom: 3.3vmax; }
+.hero__media img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 50%; }
+/* An empty caption box sits above the image: exactly one body line, at both
+   breakpoints. It looks like a bug in the original and is not one. */
+.hero__media { margin-top: var(--line-body); }
+.hero__figure { padding: var(--block); }
+.hero__lede { font-size: var(--fs-hero); line-height: 1.3776; font-weight: 500; }
+.hero__lede + .hero__lede { margin-top: 32px; }
+.hero__prose a { color: var(--mint); text-decoration: underline; }
+.prose a { color: inherit; text-decoration: underline; }
+
+.hero__spacer { display: none; }
+@media (min-width: 768px) {
+  .hero__row { grid-template-columns: 3fr 1fr 8fr; }
+  .hero__figure { padding: 0 var(--block); }        /* no vertical inset on desktop */
+  .hero__text { padding: 0 var(--block) var(--block); }
+  .hero__spacer { display: block; }
+}
+
+/* ---- product features list -------------------------------------------- */
+.list-section { padding: 4vmax 0 8vmax; }
+.list__head { padding: 0 var(--inset) 120px; }
+.list__title {
+  text-align: center;
+  font-size: var(--fs-display); line-height: 1.5; font-weight: 500;
+}
+.list {
+  display: grid; grid-template-columns: 1fr; gap: 20px;
+  list-style: none; margin: 0; padding: 0 var(--inset);
+}
+@media (min-width: 768px) { .list { grid-template-columns: 1fr 1fr; } }
+/* Percentages resolve against the grid track, which is what makes these odd
+   numbers reproduce the original's padding exactly. */
+.list__item {
+  background: var(--mint); padding: 14% 26% 13%;
+  display: flex; flex-direction: column;
+}
+.list__media {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  margin-bottom: 10%;
+}
+.list__media img { width: 100%; height: 100%; object-fit: cover; }
+.list__desc {
+  margin-top: 10%; text-align: center;
+  font-size: var(--fs-title); line-height: 1.5; font-weight: 400;
+}
+.list__cta { margin-top: 120px; padding: 0 var(--inset); text-align: center; }
+
+/* ---- tagline band ------------------------------------------------------ */
+.band { padding-top: 2.2vmax; padding-bottom: 2.2vmax; }
+.band__logo { padding: var(--block); }
+.band__logo img { width: 100%; }
+.band__head { padding: var(--block); }
+.band__title {
+  text-align: center;
+  font-size: var(--fs-display); line-height: 1.316; font-weight: 500;
+}
+@media (min-width: 768px) {
+  /* a col-2 of the 12-column row, centred by two col-5 spacers */
+  .band__logo { padding: 0 var(--block); width: calc(100% / 6); margin: 0 auto; }
+}
+
+/* ---- feature cards (the features page) -------------------------------- */
+.panel { padding: var(--header-h) var(--inset) var(--inset); }
+.panel__inner { background: var(--teal); color: var(--white); }
+.panel__content { padding: 6.6vmax var(--gutter); }
+.panel__head { padding: var(--block); }
+.panel__title {
+  text-align: center;
+  font-size: var(--fs-display); line-height: 1.316; font-weight: 500;
+}
+.card { padding: var(--block); }
+.card__figure { margin: 0; margin-top: var(--line-body); display: block; }
+.card__media { width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden; }
+.card__media img { width: 100%; height: 100%; object-fit: contain; }
+.card__body { margin-top: 10%; }
+.card__title { font-size: var(--fs-card); line-height: 1.361; font-weight: 500; }
+.card__prose { margin-top: 6%; }
+.card__prose p + p { margin-top: 1.5em; }
+.card__prose a, .panel a { color: inherit; text-decoration: underline; }
+.panel__cta { padding: var(--block); text-align: center; }
+
+@media (min-width: 768px) {
+  .panel__head { padding: 0 var(--block) var(--block); }
+  /* 45% image + 10% gap + 45% text; the even card mirrors it without changing
+     source order, because the mobile stack must stay image-first. */
+  .card__figure { display: flex; align-items: flex-start; }
+  .card__media { width: 45%; }
+  .card__body { width: 45%; margin-top: 0; margin-left: 10%; }
+  .card--mirrored .card__figure { flex-direction: row-reverse; }
+  .card--mirrored .card__body { margin-left: 0; margin-right: 10%; }
+  .panel__head + .card, .card + .card, .card + .panel__cta { margin-top: 68px; }
+}
+
+/* ---- privacy policy ---------------------------------------------------- */
+/* Its prose runs on a scale of its own -- the h4 coefficient (0.24) appears
+   nowhere else on the site -- so it is set here rather than inherited. */
+.policy { padding-top: var(--header-h); }
+.policy__inner { padding-top: 6.6vmax; padding-bottom: 6.6vmax; }
+.policy__title { font-size: var(--fs-card); line-height: 1.361; }
+.policy__spacer { display: none; }
+.prose h4 { font-size: calc(16px + 0.24 * var(--u)); line-height: 1.389; margin: 32px 0; }
+.prose p { margin: 16px 0; }
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+.prose a { color: inherit; text-decoration: underline; }
+@media (min-width: 768px) {
+  .policy__row { grid-template-columns: 5fr 1fr 6fr; align-items: start; }
+  .policy__head, .policy__row > .prose { padding: 0 var(--block); }
+  .policy__spacer { display: block; }
+}
+/* an empty band; its height is a min-height, not content */
+.band-empty { min-height: 15vh; padding: 1.5vmax var(--gutter); }
+
+/* ---- footer ------------------------------------------------------------ */
+.footer { background: var(--dark); color: var(--white); padding: 1vmax var(--gutter); }
+.footer__grid { display: grid; grid-template-columns: 1fr; margin: 0 calc(var(--block) * -1); }
+.footer__brand > .block { padding: var(--block); }
+.footer__logo { display: block; }
+.footer__logo img { width: 100%; }
+.footer__address { font-style: normal; }
+.footer__social { display: flex; gap: 8px; }
+.footer__social a { display: block; width: 28px; height: 28px; }
+.footer__social svg { width: 100%; height: 100%; fill: currentColor; }
+.footer__links { display: grid; grid-template-columns: 1fr; }
+.footer__links ul { list-style: none; margin: 0; padding: var(--block); }
+.footer a { text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+/* the footer's link columns are painted in the accent, not the section colour */
+.footer__links a { color: var(--teal); }
+
+@media (min-width: 768px) {
+  .footer__grid { grid-template-columns: repeat(12, 1fr); }
+  .footer__brand { grid-column: 1 / span 3; }
+  .footer__links { grid-column: 9 / span 4; grid-template-columns: 1fr 1fr; }
+  .footer__links ul { padding: 0 var(--block); }
+  /* a col-1 of the nested 3-column row the original puts the logo in; the row
+     is 34px tall there, taller than the 22px logo itself */
+  .footer__brand > .footer__logo-block { padding: 0 var(--block); width: calc(100% / 3); min-height: 34px; }
+}
+
+/* ---- consent banner ---------------------------------------------------- */
+.consent {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  background: var(--dark); color: var(--white);
+  padding: 16px var(--gutter);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
+  font-size: 14px; line-height: 1.5;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.2);
+}
+.consent[hidden] { display: none; }
+.consent p { flex: 1 1 320px; margin: 0; }
+.consent a { color: var(--mint); }
+.consent__actions { display: flex; gap: 12px; }
+.consent button {
+  font: inherit; font-weight: 500; cursor: pointer;
+  padding: 10px 20px; border-radius: 6.4px; border: 1px solid var(--white);
+  background: none; color: var(--white);
+}
+.consent__accept { background: var(--teal); border-color: var(--teal); }
+.consent button:hover { opacity: 0.85; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "matchbox.health",
+  "private": true,
+  "description": "Static site for www.matchbox.health",
+  "license": "Apache-2.0",
+  "devDependencies": { "playwright": "^1.62.1" },
+  "scripts": {
+    "build": "python3 _build/build.py",
+    "archive": "./_reference/archive.sh",
+    "serve": "python3 -m http.server 8081",
+    "compare": "node _design/tools/compare.mjs",
+    "check": "node _design/tools/linkcheck.mjs && node _design/tools/test-consent.mjs"
+  }
+}
