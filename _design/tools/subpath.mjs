@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const BASE='http://localhost:8090/matchbox.health';
+const BASE=process.env.BASE || 'http://localhost:8090/matchbox.health';
 const b=await chromium.launch();
 for (const path of ['/','/features/','/privacy-policy/','/404.html']) {
   const p=await b.newPage(); await p.setViewportSize({width:1440,height:900});

@@ -203,8 +203,18 @@ def standalone(title, description, css):
   <h1>Page not found</h1>
   <p>The page you asked for is not here. It may have moved when this site was
      rebuilt.</p>
-  <p><a class="button" href="/">Back to Overview</a></p>
+  <p><a class="button" id="home" href="/">Back to Overview</a></p>
 </main>
+<script>
+// On the custom domain the root-absolute href above is already right. On the
+// ahdis.github.io preview the site lives under /<repo>/, so point at that
+// instead -- without this the only link on the page leaves the project.
+(function () {
+  if (!location.hostname.endsWith("github.io")) return;
+  var repo = location.pathname.split("/")[1];
+  if (repo) document.getElementById("home").href = "/" + repo + "/";
+}());
+</script>
 </body>
 </html>
 """
