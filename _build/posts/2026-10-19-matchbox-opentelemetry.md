@@ -3,7 +3,7 @@ title: Monitoring Matchbox with OpenTelemetry
 date: 2026-10-19
 author: Quentin Ligier
 github: qligier
-summary: "Matchbox can export its metrics, traces and logs with OpenTelemetry. This tutorial turns the export on, sends the data to Traceway, and sets up a dashboard and alerts for a Matchbox server."
+summary: "How busy is your Matchbox server? Which validations are slow, and is it about to run out of memory? Through OpenTelemetry, the open standard that most monitoring tools support, Matchbox now sends its metrics, traces and logs to a monitoring platform such as Traceway, which collects them and gives you the answers. In this hands-on tutorial, Quentin shows how to set it up in a few minutes, build a dashboard and add alerts, so you always have a clear view of how your validation service is doing."
 tags: [validation, performance, telemetry]
 original: https://www.ahdis.ch/en/blog/2026/matchbox-telemetry
 ---
