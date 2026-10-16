@@ -21,8 +21,15 @@ const run = async (label, action) => {
   console.log(`  ${label.padEnd(22)} bannerFirst=${String(before).padEnd(5)} afterClick=${String(after).padEnd(5)}`
     + ` bannerOnNextPage=${String(onSecondPage).padEnd(5)} gaRequests=${hits.length}`);
   await ctx.close();
+  return { before, after, onSecondPage, ga: hits.length };
 };
-await run('no interaction', null);
-await run('Decline', '.consent__deny');
-await run('Accept', '.consent__accept');
+const none = await run('no interaction', null);
+const deny = await run('Decline', '.consent__deny');
+const accept = await run('Accept', '.consent__accept');
 await b.close();
+// exit non-zero for CI if Google is contacted without consent, or the choice does not stick
+const ok = none.before && none.onSecondPage && none.ga === 0
+  && deny.before && !deny.after && !deny.onSecondPage && deny.ga === 0
+  && accept.before && !accept.after && !accept.onSecondPage && accept.ga > 0;
+console.log(ok ? '  consent: ok' : '  consent: FAILED');
+process.exitCode = ok ? 0 : 1;
