@@ -48,16 +48,24 @@ footer once there is at least one post.
 
 1. Copy `_build/posts/_template.md` to `_build/posts/YYYY-MM-DD-<slug>.md`, fill
    in the front matter and write the draft. The HTML comment at the top is for
-   notes to the agent ("keep the text unchanged", who it is for).
-2. Open a PR. The **Claude** workflow runs the `matchbox-blog` skill: it
-   completes the front matter, edits the text for implementers (unless told
-   not to), builds, commits to the PR branch and comments what it did.
+   notes to the agent ("keep the text unchanged", who it is for). To
+   republish an article, paste its Markdown into the post: the agent cannot
+   read private repositories such as `ahdis/ahdis-blog`, and `WebFetch` only
+   gives it a summary of a page, not the text.
+2. Open a PR. The **Check** on this first commit fails while the draft is
+   incomplete; that is expected. The **Claude** workflow runs the
+   `matchbox-blog` skill: it completes the front matter, edits the text for
+   implementers (unless told not to), builds, commits to the PR branch and
+   comments what it did.
 3. Iterate with PR comments that mention `@claude`. `@claude rebuild` just
    regenerates `docs/`.
 4. The **Check** workflow attaches a `preview` artifact with the built site and
    screenshots of every blog page at 1440 and 390px. For the real thing:
-   `gh pr checkout <n> && npm run serve`.
-5. Merge. The post is live about 30 seconds later.
+   `gh pr checkout <n> && npm run serve`. If the Check on one of the agent's
+   commits says it is waiting for approval, click **Approve and run** on the
+   PR: GitHub treats the agent's bot accounts as first-time contributors.
+5. Merge once the Check is green; `main` does not accept a merge before. The
+   post is live about 30 seconds later.
 
 A post that first appeared elsewhere sets `original:`. It then says
 "Originally published on …", its canonical URL points to the original, and it
@@ -67,7 +75,13 @@ The agent authenticates with a Claude subscription token, created with
 `claude setup-token` and stored as the repository secret
 `CLAUDE_CODE_OAUTH_TOKEN`. It uses that subscription's limits. The Claude
 GitHub App must be installed on the repository. Only users with write access
-can start the agent.
+can start the agent. Each run writes its turns, tokens, cost at API prices and
+any denied tool calls to the run's summary page (Actions → the Claude run).
+
+The agent cannot change `.claude/` (its skill) or `.github/workflows/`; it puts
+the text for such changes in its PR comment, and a person makes them in a PR.
+A change to `claude.yml` only takes effect once it is on `main`: the action
+refuses to run from a workflow file that differs from the copy on `main`.
 
 ## Checking it against the original
 
@@ -128,6 +142,12 @@ on 2026-08-19. Pages serves `main` / `/docs`; `docs/CNAME` holds
 `www.matchbox.health`. (It served `main` / root until 2026-10, which published
 the generator, the design notes and the Squarespace archive along with the site.)
 HTTPS is enforced, so `http://` redirects to `https://`.
+
+`main` is protected by the ruleset "main: PR and Check required": every change
+goes through a PR, the **Check** job (`build`) must pass before merging, and
+force pushes and deletion are blocked. Repository admins can bypass it in an
+emergency, for example a rollback (`gh api repos/ahdis/matchbox.health/rulesets`
+lists it).
 
 Publishing is a push to `main`, normally a merged PR. GitHub then runs its
 built-in `pages-build-deployment` workflow (it is not a file in this repo),
