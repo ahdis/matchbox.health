@@ -7,7 +7,7 @@
   "scripts": {
     "build": "python3 _build/build.py",
     "archive": "./_reference/archive.sh",
-    "serve": "python3 -m http.server 8081",
+    "serve": "python3 -m http.server 8081 -d docs",
     "compare": "node _design/tools/compare.mjs",
     "check": "node _design/tools/linkcheck.mjs && node _design/tools/test-consent.mjs"
   }

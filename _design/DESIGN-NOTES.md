@@ -1,6 +1,6 @@
 # What was measured, and what it means
 
-Everything in `assets/css/site.css` came from the live Squarespace site rather
+Everything in `docs/assets/css/site.css` came from the live Squarespace site rather
 than from its 1.3 MB theme bundle. This file records the findings that were not
 obvious, so the next person does not have to re-derive them.
 
