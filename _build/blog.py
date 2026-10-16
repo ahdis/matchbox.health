@@ -179,10 +179,14 @@ def post_body(post, content):
 
 
 def index_body(posts):
+    """Each entry: byline, title, summary, a "Read more" link to the post, and
+    the tags. Tags are plain labels (no links), styled so they do not look like
+    buttons."""
     items = "\n".join(f"""        <li class="posts__item">
           <p class="posts__meta">{byline(p)}</p>
           <h2 class="posts__title"><a href="{p['path']}">{html.escape(p['title'])}</a></h2>
           <p class="posts__summary">{html.escape(p['summary'])}</p>
+          <p class="posts__more"><a href="{p['path']}" aria-label="Read more: {html.escape(p['title'])}">Read more &rarr;</a></p>
           {tag_list(p)}
         </li>""" for p in posts)
     return f"""  <section class="section section--dark post-hero">

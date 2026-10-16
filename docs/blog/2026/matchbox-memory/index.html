@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup &mdash; matchbox.health</title>
+<meta name="description" content="Matchbox 4.1.18 no longer sets a fixed 12 GB heap: a typical validation server now runs in a 4 GB container, also with several IGs. How an AI agent and a reproducible load test found and fixed the memory culprits in 24 hours.">
+<link rel="canonical" href="https://www.ahdis.ch/en/blog/2026/matchbox-memory">
+<meta property="og:site_name" content="matchbox.health">
+<meta property="og:title" content="Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup &mdash; matchbox.health">
+<meta property="og:description" content="Matchbox 4.1.18 no longer sets a fixed 12 GB heap: a typical validation server now runs in a 4 GB container, also with several IGs. How an AI agent and a reproducible load test found and fixed the memory culprits in 24 hours.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://www.ahdis.ch/en/blog/2026/matchbox-memory">
+<meta property="og:image" content="https://www.matchbox.health/assets/img/matchbox-logo.webp">
+<meta property="og:image:width" content="725">
+<meta property="og:image:height" content="306">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" type="application/atom+xml" title="matchbox.health blog" href="https://www.matchbox.health/blog/feed.xml">
+<meta property="article:published_time" content="2026-09-26">
+<meta property="article:tag" content="performance">
+<meta property="article:tag" content="validation">
+<meta property="article:tag" content="docker">
+<meta property="article:tag" content="ai">
+<link rel="icon" href="../../../assets/img/favicon.ico" sizes="any">
+<link rel="preload" as="font" type="font/woff2" href="../../../assets/fonts/poppins-400-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="../../../assets/fonts/poppins-500-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../../../assets/css/site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to Content</a>
+  <header class="header">
+    <div class="header__inner">
+      <a class="header__logo" href="../../../" aria-label="matchbox.health home">
+        <img src="../../../assets/img/matchbox-logo.webp" width="725" height="306" alt="matchbox">
+      </a>
+      <button class="header__toggle" type="button" aria-expanded="false"
+              aria-controls="site-menu" aria-label="Open Menu">
+        <span class="header__toggle-icon" aria-hidden="true"></span>
+      </button>
+      <nav class="header__nav" aria-label="Main">
+        <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <div class="menu" id="site-menu" hidden>
+    <nav class="menu__nav" aria-label="Main">
+      <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+<main id="main">
+  <section class="section section--dark post-hero">
+    <div class="wrap post-hero__inner">
+      <div class="column">
+        <p class="post-hero__crumb"><a href="../../../blog/">Blog</a></p>
+        <h1 class="post-hero__title">Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup</h1>
+        <p class="post-hero__meta"><time datetime="2026-09-26">26 September 2026</time> &middot; Oliver Egger (<a href="https://github.com/oliveregger" target="_blank" rel="noopener">@oliveregger</a>)</p>
+        <ul class="tags" aria-label="Tags"><li class="tag tag--release">Matchbox 4.1.18</li><li class="tag">performance</li><li class="tag">validation</li><li class="tag">docker</li><li class="tag">ai</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--white post">
+    <div class="wrap post__inner">
+      <article class="column article">
+          <p class="article__original">Originally published on <a href="https://www.ahdis.ch/en/blog/2026/matchbox-memory" target="_blank" rel="noopener">ahdis.ch</a> on 26 September 2026.</p>
+<p>In 24 hours, <a href="../../../">Matchbox</a> went from a fixed 12 GB heap to a 4 GB container for a typical validation server. The work was done by an AI agent, Claude Code with Opus 5.5: it ran the builds, the load tests and the heap dump analysis, and proposed and implemented the optimizations, while a human stayed in the loop for every decision. This article describes how we got there, and why a reproducible load test mattered as much as the agent.</p>
+<h2 id="matchbox-and-why-validation-matters">Matchbox and why validation matters</h2>
+<p><a href="https://hl7.org/fhir/" target="_blank" rel="noopener">FHIR®</a>, the HL7 standard for healthcare interoperability, leaves a lot of freedom in how data is represented. To guarantee the correctness of an exchange like a lab report or a patient summary, FHIR resources are validated against the rules published in FHIR implementation guides (IGs): which fields are required, which codes are allowed, which cardinalities apply.</p>
+<p><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">Matchbox</a> is our open-source FHIR validation and mapping tooling. It wraps the official <a href="https://confluence.hl7.org/spaces/FHIR/pages/35718580/Using+the+FHIR+Validator" target="_blank" rel="noopener">HL7 FHIR validator</a> in a server with its own FHIR API and a web GUI, supports multiple IGs at once, and also offers validation through an <a href="https://ahdis.github.io/matchbox/validation-with-ai-tutorial/" target="_blank" rel="noopener">MCP service</a>. We started in August 2020 and have published <a href="https://github.com/ahdis/matchbox/releases" target="_blank" rel="noopener">98 releases</a> since then. It runs in production infrastructure (e.g. the Swiss notification of laboratory results, <a href="https://fhir.ch/ig/ch-elm/api.html" target="_blank" rel="noopener">ch-elm</a>), in test platforms such as <a href="https://gazelle.ihe.net/?page_id=147" target="_blank" rel="noopener">IHE Gazelle</a> at <a href="https://www.ihe.net/testing/connectathon/" target="_blank" rel="noopener">IHE connectathons</a> and <a href="https://ehealthsuisse.ihe-europe.net/gazelle/home" target="_blank" rel="noopener">projectathons</a>, and in integration pipelines.</p>
+<h2 id="memory-became-the-bottleneck">Memory became the bottleneck</h2>
+<p>FHIR IGs tend to get bigger: to stay aligned with international developments, they depend on European and international IGs, and each new terminology dependency makes validation hungrier for memory. Initially, we assumed this was a natural evolution and let the container grow. Then we were asked why an existing validation setup needed four times the memory within one year. In addition, several issues and pull requests from the community pointed to memory problems:</p>
+<ul>
+<li>Achraf (<a href="https://github.com/achrafachkari" target="_blank" rel="noopener">@achrafachkari</a>) found that the human-readable HTML narrative of every loaded resource stayed in memory (<a href="https://github.com/ahdis/matchbox/issues/566" target="_blank" rel="noopener">#566</a>).</li>
+<li>Valentin (<a href="https://github.com/reva" target="_blank" rel="noopener">@reva</a>) measured better throughput with a smaller heap than the image's default of 12 GB and asked for configurable JVM options (<a href="https://github.com/ahdis/matchbox/issues/594" target="_blank" rel="noopener">#594</a>, <a href="https://github.com/ahdis/matchbox/pull/595" target="_blank" rel="noopener">#595</a>).</li>
+<li>We ourselves hit an <code>OutOfMemoryError</code> on <a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">our memory-constrained test instance</a>, while the health check still reported the server as up (<a href="https://github.com/ahdis/matchbox/issues/457" target="_blank" rel="noopener">#457</a>).</li>
+</ul>
+<p>In release 4.1.14 we had already added <a href="https://ahdis.github.io/matchbox/docker/#live-and-readiness-checks" target="_blank" rel="noopener">memory metrics</a> to Matchbox, but observing the problem was not enough. Fortunately, we also had <a href="https://github.com/ahdis/matchbox/tree/main/jmeter" target="_blank" rel="noopener">test setups for load testing</a>.</p>
+<h2 id="the-test-setup-reproduce-before-you-optimize">The test setup: reproduce before you optimize</h2>
+<p>The test setups were mostly used to reproduce concurrency issues in validation: <a href="https://jmeter.apache.org/" target="_blank" rel="noopener">Apache JMeter</a> sends 8,000 validations of a ch-elm lab report (4 threads) to a Matchbox container and asks the server for its memory use after each one. The results were trustworthy, but the comparison was manual on my development machine, and reruns were difficult to compare because the machine load could differ between runs.</p>
+<p>So we first made the measurements reproducible. A script starts a fresh container and records the startup time, the first and the second validation, and the live heap. All runs happened on the same idle machine. To check servers with several IGs, a <a href="https://github.com/ahdis/matchbox/blob/main/jmeter/multi-ig.jmx" target="_blank" rel="noopener">second JMeter test</a> validates examples from different IGs, each of which gets its own validation engine. For a validator, a faster answer is worthless if it is a different answer, so every run also compared the validation results.</p>
+<h2 id="working-with-an-ai-agent">Working with an AI agent</h2>
+<p>Extending the test setup and the analysis were all done with <a href="https://claude.com/claude-code" target="_blank" rel="noopener">Claude Code</a> and Opus 5.5 (high effort) within VS Code. My job was to set the direction, review the findings and make every decision. What Claude Opus 5.5 did:</p>
+<ul>
+<li><strong>Bisecting across releases.</strong> It pulled or rebuilt ten <a href="https://github.com/ahdis/matchbox-ch-elm" target="_blank" rel="noopener">ch-elm images</a> of the last nine months (Matchbox <a href="https://github.com/ahdis/matchbox/releases/tag/v4.0.16" target="_blank" rel="noopener">4.0.16</a> to <a href="https://github.com/ahdis/matchbox/releases/tag/v4.1.18" target="_blank" rel="noopener">4.1.18</a>), ran the same load test on each, and found in which release validation became slower and in which it became faster again, to get a clearer view of the problem.</li>
+<li><strong>Profiling and heap dumps.</strong> With <a href="https://en.wikipedia.org/wiki/JDK_Flight_Recorder" target="_blank" rel="noopener">Java Flight Recorder</a> it recorded which code paths parsed resources. With <a href="https://eclipse.dev/mat/" target="_blank" rel="noopener">Eclipse Memory Analyzer</a> it analyzed heap dumps in headless mode: which objects keep the memory alive, per package and per validation engine.</li>
+<li><strong>Reading upstream code, recommending and implementing optimizations.</strong> It compared Matchbox with the official HL7 validator in <a href="https://github.com/hapifhir/org.hl7.fhir.core" target="_blank" rel="noopener">org.hl7.fhir.core</a>, changed the code, ran the tests and repeated the measurements until the numbers and the validation results matched.</li>
+</ul>
+<p>In 24 hours this added up to about 35 load and startup test runs, 17 Docker image builds, 10 Matchbox versions compared and 9 heap dumps analyzed.</p>
+<h2 id="the-culprits-in-memory-consumption">The culprits in memory consumption</h2>
+<p>The heap dumps showed where the memory went. For ch-elm, 44,650 conformance resources (profiles, value sets, code systems) were loaded, all parsed into Java objects, consuming about 1 GB. The IG and its dependencies alone pull in seven versions of the <a href="https://terminology.hl7.org/" target="_blank" rel="noopener">HL7 terminology</a> package. The main culprits and their fixes:</p>
+<ol>
+<li><strong>Leftover package files (−171 MB).</strong> For a handful of small files, a helper kept a reference to the whole package it came from. So all raw files of <code>hl7.fhir.r4.core</code> and <code>hl7.fhir.uv.xver-r5.r4</code> (210 MB) stayed in memory. It now keeps only the file it needs, which lowers the live heap by 171 MB.</li>
+<li><strong>Identical strings (−15%, about 220 MB).</strong> The many package versions contain a lot of identical text. Java's <a href="https://openjdk.org/jeps/192" target="_blank" rel="noopener">string deduplication</a> (<code>-XX:+UseStringDeduplication</code>) lets the garbage collector share it, at no measurable cost. It is now on by default.</li>
+<li><strong>Everything parsed up front (−330 MB).</strong> The official validator loads resources lazily: it registers each resource with some metadata and parses it only when a validation needs it. Matchbox had never adopted this for its package loading. Now the terminology resources (code systems, value sets, naming systems, concept maps) are loaded lazily. Matchbox also pins the terminology resources of the FHIR core to their core versions; this step now reads the versions from the metadata instead of parsing every resource.</li>
+<li><strong>Unused definitions of the database layer (−40 MB).</strong> The search indexing of the underlying <a href="https://hapifhir.io/" target="_blank" rel="noopener">HAPI FHIR</a> server loaded all 649 FHIR core profiles for a type analysis it never uses.</li>
+</ol>
+<p>The agent discovered all four of these issues and presented approaches to solve them. Not every idea worked. Loading <em>all</em> resources lazily made the first validation take 2.4 instead of 0.85 seconds, because the validator walks through all profiles on first use anyway. So profiles are parsed at startup, like in the official validator, and terminology on demand.</p>
+<h2 id="results-for-a-single-ig">Results for a single IG</h2>
+<p>For ch-elm, a typical production setup with one IG, the <a href="https://github.com/ahdis/matchbox-ch-elm" target="_blank" rel="noopener">ch-elm image</a> 1.15.3 (based on Matchbox 4.1.18) needs 660 MB of heap. That is less than a third of image 1.13.1, which still ran with 3 GB, and a fifth of image 1.14.1, which needs 3.4 GB and no longer fits into 3 GB. It validates three times faster than 1.13.1, and as fast as 1.15.2. Compared with 1.15.2, the memory drops by more than half and the server starts about 25% faster. Startup is still slower than with 1.13.1; as each image changes both the Matchbox and the ch-elm version, the two effects can't be separated here.</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th>Matchbox release (ch-elm image)</th>
+<th>4.0.16 (1.13.1)</th>
+<th>4.1.9 (1.14.1)</th>
+<th>4.1.17 (1.15.2)</th>
+<th>4.1.18 (1.15.3)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Heap limit of the image</td>
+<td>3 GB</td>
+<td>12 GB</td>
+<td>12 GB</td>
+<td>70% of the container memory</td>
+</tr>
+<tr>
+<td>Live heap after 8,000 validations</td>
+<td>2,300 MB</td>
+<td>3,420 MB</td>
+<td>1,560 MB</td>
+<td>660 MB</td>
+</tr>
+<tr>
+<td>Server ready after</td>
+<td>36–37 s</td>
+<td>43–46 s</td>
+<td>65–67 s</td>
+<td>48–49 s</td>
+</tr>
+<tr>
+<td>Validation under load (median of 8,000)</td>
+<td>327 ms</td>
+<td>250 ms</td>
+<td>104 ms</td>
+<td>108 ms</td>
+</tr>
+<tr>
+<td>Runs the load test in a 3 GB heap</td>
+<td>Yes</td>
+<td>No (live heap 3.4 GB)</td>
+<td>Yes</td>
+<td>Yes, also in 1 GB</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="several-igs-share-what-engines-have-in-common">Several IGs: share what engines have in common</h2>
+<p>Matchbox creates one validation engine per IG/validation parameters, so that the rules of one IG cannot interfere with another. The heap dumps showed that, apart from the FHIR core and the base terminology, each engine loaded all its packages again. Swiss IGs share most of their dependencies, so with twelve IGs, 133,000 resource objects existed more than once: 2.3 GB of duplicates. Now a cache shares the loaded packages between the engines. It keeps only weak references, so a package is freed when the last engine using it is dropped after an hour without use.</p>
+<p>We measured this with <a href="https://github.com/ahdis/matchbox/tree/main/matchbox-server/with-preload" target="_blank" rel="noopener">with-preload</a>, a sample configuration of Matchbox that preloads 12 Swiss IGs with their dependencies (55 packages). With the new default in a container with a 4 GB limit (a heap of 2.8 GB), all 12 engines ran 400 validations without failures and used 3.5 GB of the container's memory.</p>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th>with-preload: 12 Swiss IGs, 55 packages</th>
+<th>Release 4.1.9</th>
+<th>Release 4.1.17</th>
+<th>Release 4.1.18</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Heap limit of the image</td>
+<td>12 GB</td>
+<td>12 GB</td>
+<td>70% of the container memory</td>
+</tr>
+<tr>
+<td>Live heap with all 12 engines</td>
+<td>10,630 MB</td>
+<td>4,756 MB</td>
+<td>1,187 MB</td>
+</tr>
+<tr>
+<td>Memory held by the 12 IG engines alone</td>
+<td>8,123 MB</td>
+<td>3,465 MB</td>
+<td>177 MB</td>
+</tr>
+<tr>
+<td>Duplicated between engines</td>
+<td>n.a.</td>
+<td>2,278 MB</td>
+<td>1 MB</td>
+</tr>
+<tr>
+<td>Creating an IG engine (median)</td>
+<td>19 s</td>
+<td>48 s</td>
+<td>16 s</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="what-changes-for-you-as-a-matchbox-user">What changes for you as a Matchbox user</h2>
+<p>The changes are released in <a href="https://github.com/ahdis/matchbox/releases/tag/v4.1.18" target="_blank" rel="noopener">Matchbox 4.1.18</a> and the <a href="https://github.com/ahdis/matchbox-ch-elm/releases/tag/1.15.3" target="_blank" rel="noopener">ch-elm image 1.15.3</a>:</p>
+<ul>
+<li><strong>A new memory default.</strong> The <a href="https://ahdis.github.io/matchbox/docker/#jvm-options" target="_blank" rel="noopener">Docker image</a> no longer sets a fixed 12 GB heap, which could even exceed the memory limit of a container. It now uses 70% of the container's memory limit (<code>-XX:MaxRAMPercentage=70</code>).</li>
+<li><strong>4 GB is enough for a typical setup.</strong> We recommend a memory limit of 4 GB for the container, also for multiple IGs. A single IG such as ch-elm runs comfortably with 3 GB.</li>
+<li><strong>Configurable JVM options.</strong> The options can be overridden with the <code>JDK_JAVA_OPTIONS</code> environment variable (<a href="https://github.com/ahdis/matchbox/issues/594" target="_blank" rel="noopener">#594</a>). Setting it replaces the default, so include a heap setting, <code>-XX:+ExitOnOutOfMemoryError</code> and <code>-XX:+UseStringDeduplication</code>.</li>
+<li><strong>A restart instead of a zombie.</strong> On the first <code>OutOfMemoryError</code>, the server now exits (<code>-XX:+ExitOnOutOfMemoryError</code>) instead of continuing in an undefined state while the health check reports it as up, so that Docker or Kubernetes can restart it (<a href="https://github.com/ahdis/matchbox/issues/457" target="_blank" rel="noopener">#457</a>).</li>
+<li><strong>Faster engines.</strong> Compared with 4.1.17, the server starts about 25% faster and creates IG engines three times faster.</li>
+</ul>
+<div class="code"><span class="code__lang">bash</span><pre><code>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>matchbox<span class="w"> </span>-p<span class="w"> </span><span class="m">8080</span>:8080<span class="w"> </span>-m<span class="w"> </span>4g<span class="w"> </span>europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:latest
+</code></pre></div>
+<h2 id="lessons-a-day-instead-of-weeks-with-an-agent">Lessons: a day instead of weeks with an agent</h2>
+<p>I could have done almost all of this myself. I'm familiar with load testing, bisecting releases, profiling and heap dump analysis, but less so with tools such as JFR or Eclipse Memory Analyzer. Even after we noticed the memory problem, I could not find the time: each step means waiting for a 30-minute test run, writing heap dump queries or reading code in a large upstream project.</p>
+<p>Opus 5.5 took over exactly these steps: it ran them continuously, one after another and in parallel, in one session of 1 million tokens. I let it write a whole <a href="https://github.com/ahdis/matchbox/blob/main/jmeter/claude-jmeter-check.md" target="_blank" rel="noopener">runbook</a> and continued in a new session the next day, to verify that the setup can be reused and this is not a one-shot optimization.</p>
+<p>The agent found features in the core libraries that we had missed, and proposed new approaches, such as sharing the loaded FHIR packages between the engines. I had not seen these qualities in agentic coding before. Opus 4.7 was the first model that could handle the Matchbox code, but Opus 5.5 is another leap: it can be used for software engineering, not just coding.</p>
+<p>The reproducible test setup made this possible. Every proposal of the agent was measured against the same load test on the same machine, and every run checked that the validation results stayed the same. Every pull request goes through our Matchbox <a href="https://github.com/ahdis/matchbox/tree/main/matchbox-engine/src/test" target="_blank" rel="noopener">engine</a> and <a href="https://github.com/ahdis/matchbox/tree/main/matchbox-server/src/test" target="_blank" rel="noopener">server tests</a>, which check specific validation features, and our <a href="https://github.com/ahdis/matchbox-int-tests" target="_blank" rel="noopener">integration tests</a>, which check that the examples of the IGs we are interested in are still validated correctly. Without that, we could neither have trusted the improvements nor rejected the wrong ideas.</p>
+<p>And a human in the loop stays essential. The agent proposed, measured and implemented, but not every proposal was right. Loading only the newest version of each terminology package would have saved 400 MB, but the IGs depend on specific versions, and validating against just the latest terminology version can change the results. Loading all resources lazily saved memory but made the first validation three times slower. I knew that multiple package versions are needed, which trade-offs are acceptable, and when a proposal was wrong.</p>
+<p>In one day we delivered a Matchbox release that needs a fraction of the memory. But it needs the community to raise awareness and bring urgency to the problems, so thanks again to Achraf (<a href="https://github.com/achrafachkari" target="_blank" rel="noopener">@achrafachkari</a>), Valentin (<a href="https://github.com/reva" target="_blank" rel="noopener">@reva</a>) and especially my colleague Quentin (<a href="https://github.com/qligier" target="_blank" rel="noopener">@qligier</a>), co-maintainer of Matchbox, who has to review all my pull requests co-authored with Claude Code.</p>
+<p>Disclaimer: As with the code, I used Claude to help me with this blog article, but I read and refined every sentence.</p>
+      </article>
+      <p class="column post__back"><a class="button" href="../../../blog/">All posts</a></p>
+    </div>
+  </section>
+</main>
+  <footer class="footer">
+    <div class="footer__grid">
+      <div class="footer__brand">
+        <div class="block footer__logo-block">
+          <a class="footer__logo" href="https://ahdis.ch/en/" target="_blank" rel="noopener">
+            <img src="../../../assets/img/ahdis-logo.webp" width="1004" height="295" alt="ahdis ag">
+          </a>
+        </div>
+        <div class="block">
+          <address class="footer__address">
+            ahdis ag<br>c/o Impact Hub Z&uuml;rich<br>Sihlquai 131<br>8005 Z&uuml;rich<br>Switzerland
+          </address>
+        </div>
+        <div class="block">
+          <nav class="footer__social" aria-label="ahdis on other services">
+            <a href="mailto:info@ahdis.ch" aria-label="Email ahdis"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 4h20v16H2V4zm10 7L3.5 5.5v.2L12 12l8.5-6.3v-.2L12 11z"/></svg></a>
+            <a href="https://x.com/oliveregger" aria-label="ahdis on X" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18.9 2H22l-7 8 8.2 12h-6.4l-5-7.3-5.8 7.3H2.9l7.5-8.6L2.5 2H9l4.6 6.7L18.9 2zm-1.1 18h1.8L7.3 3.8H5.4L17.8 20z"/></svg></a>
+            <a href="https://www.linkedin.com/company/ahdis-ag/" aria-label="ahdis on LinkedIn" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3V9zm7 0h3.8v1.7h.05c.53-1 1.83-2.05 3.75-2.05C21.6 8.65 23 10.9 23 14.3V21h-4v-6c0-1.5-.03-3.4-2.1-3.4-2.1 0-2.4 1.6-2.4 3.3V21h-4V9z"/></svg></a>
+            <a href="https://www.youtube.com/@ahdis-ch" aria-label="ahdis on YouTube" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M23 12s0-3.6-.46-5.33a2.77 2.77 0 0 0-1.95-1.96C18.86 4.25 12 4.25 12 4.25s-6.86 0-8.59.46A2.77 2.77 0 0 0 1.46 6.67C1 8.4 1 12 1 12s0 3.6.46 5.33c.26.95 1 1.7 1.95 1.96 1.73.46 8.59.46 8.59.46s6.86 0 8.59-.46a2.77 2.77 0 0 0 1.95-1.96C23 15.6 23 12 23 12zM9.75 15.27V8.73L15.5 12l-5.75 3.27z"/></svg></a>
+            <a href="https://github.com/ahdis" aria-label="ahdis on GitHub" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.5 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg></a>
+            <a href="https://www.ahdis.ch/en/home" aria-label="ahdis website" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-2.95a15.6 15.6 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14A8.06 8.06 0 0 1 4 12c0-.69.1-1.36.26-2h3.38a16.6 16.6 0 0 0 0 4H4.26zm.84 2h2.95c.33 1.27.8 2.47 1.38 3.56A7.99 7.99 0 0 1 5.1 16zm2.95-8H5.1a7.99 7.99 0 0 1 4.33-3.56A15.6 15.6 0 0 0 8.05 8zM12 19.96A13.9 13.9 0 0 1 10.09 16h3.82A13.9 13.9 0 0 1 12 19.96zM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4zm.23 5.56c.58-1.09 1.05-2.29 1.38-3.56h2.95a7.99 7.99 0 0 1-4.33 3.56zM16.36 14a16.6 16.6 0 0 0 0-4h3.38c.17.64.26 1.31.26 2 0 .69-.1 1.36-.26 2h-3.38z"/></svg></a>
+          </nav>
+        </div>
+        <div class="block">
+          <p class="footer__copy">&copy; ahdis ag</p>
+        </div>
+      </div>
+      <nav class="footer__links" aria-label="Footer">
+        <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Commercial Support</a></li>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+        <ul>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+          <li><a href="../../../privacy-policy/">Privacy Policy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+
+  <div class="consent" role="region" aria-label="Cookie notice" hidden>
+    <p>We use Google Analytics to understand how this site is used. Analytics
+       cookies are only set if you agree. See our
+       <a href="../../../privacy-policy/">Privacy Policy</a>.</p>
+    <div class="consent__actions">
+      <button type="button" class="consent__accept">Accept</button>
+      <button type="button" class="consent__deny">Decline</button>
+    </div>
+  </div>
+<script src="../../../assets/js/site.js" defer></script>
+</body>
+</html>

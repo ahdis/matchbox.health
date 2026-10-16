@@ -345,7 +345,7 @@ body.is-menu-open .header { background: transparent; }
 :root {
   --rule: #dbe4ea;     /* hairlines on white */
   --tint: #eef3f6;     /* inline code ground */
-  --code: #2b4252;     /* code block ground, a step darker than --dark */
+  --code: #f4f7f9;     /* code block ground, light so it does not outweigh the text */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .column { max-width: 46rem; margin-left: auto; margin-right: auto; }
@@ -364,13 +364,13 @@ body.is-menu-open .header { background: transparent; }
 .post-hero__lede { font-size: var(--fs-hero); line-height: 1.3776; font-weight: 500; }
 .post-hero__feed { margin-top: 24px; font-size: 16px; }
 
-.tags { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 16px 0 0; padding: 0; }
-.tag {
-  font-size: 13px; line-height: 1.5; padding: 2px 10px; border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-}
-.tag--release { background: var(--mint); border-color: var(--mint); color: var(--dark); font-weight: 500; }
-.posts .tag { border-color: var(--rule); }
+/* Tags are labels, not links: plain small text separated by dots, so they do
+   not look like buttons. */
+.tags { display: flex; flex-wrap: wrap; list-style: none; margin: 16px 0 0; padding: 0; font-size: 14px; line-height: 1.5; }
+.tag + .tag::before { content: "\00b7"; margin: 0 0.5em; }
+.tag--release { font-weight: 500; }
+.post-hero .tag--release { color: var(--mint); }
+.posts .tag--release { color: var(--dark); }
 
 .post__inner { padding-top: 4vmax; padding-bottom: 6.6vmax; }
 .post__back { margin-top: 48px; }
@@ -384,6 +384,10 @@ body.is-menu-open .header { background: transparent; }
 .posts__title { margin: 0.3em 0 0.4em; font-size: var(--fs-card); line-height: 1.361; }
 .posts__title a { color: var(--dark); text-decoration: none; }
 .posts__title a:hover { text-decoration: underline; text-decoration-color: var(--teal); }
+.posts__more { margin: 0.6em 0 0; font-weight: 500; }
+/* --dark, not --teal: teal on white is below 4.5:1 at this size */
+.posts__more a { color: var(--dark); text-decoration: underline; text-decoration-color: var(--teal); text-underline-offset: 0.2em; }
+.posts__more a:hover { text-decoration-thickness: 2px; }
 
 /* the article text */
 .article > :first-child { margin-top: 0; }
@@ -430,24 +434,27 @@ body.is-menu-open .header { background: transparent; }
 .article td:first-child { color: var(--dark); font-weight: 500; }
 
 /* code blocks; the token colours are Pygments' short classes */
-.article .code { background: var(--code); color: #e6edf2; border-radius: 6.4px; overflow: hidden; }
+.article .code {
+  background: var(--code); color: var(--dark); border: 1px solid var(--rule);
+  border-left: 4px solid var(--mint); border-radius: 6.4px; overflow: hidden;
+}
 .code__lang {
-  display: block; padding: 0.5em 1.25em; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mint);
+  display: block; padding: 0.5em 1.25em; border-bottom: 1px solid var(--rule);
+  font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--slate);
 }
 .article .code pre { margin: 0; padding: 1em 1.25em; overflow-x: auto; }
 .article .code code {
   background: none; padding: 0; border-radius: 0; color: inherit;
   font-size: 0.82em; line-height: 1.6; overflow-wrap: normal;
 }
-.code .c, .code .c1, .code .cm, .code .ch, .code .cs, .code .cp { color: #9fb4c3; font-style: italic; }
-.code .k, .code .kc, .code .kd, .code .kn, .code .kr, .code .kt, .code .ow, .code .gp { color: var(--mint); }
+.code .c, .code .c1, .code .cm, .code .ch, .code .cs, .code .cp { color: #5a6f7f; font-style: italic; }
+.code .k, .code .kc, .code .kd, .code .kn, .code .kr, .code .kt, .code .ow, .code .gp { color: #2e7a64; }
 .code .s, .code .s1, .code .s2, .code .sb, .code .sc, .code .sd, .code .se,
-.code .sh, .code .si, .code .sx, .code .sr, .code .ss { color: #f5d48f; }
-.code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .il { color: #f4a99b; }
-.code .nt, .code .na, .code .nf, .code .nb, .code .nc { color: #8fd0dc; }
-.code .nv, .code .vg, .code .vi, .code .vc { color: #c9b8f0; }
-.code .o, .code .p { color: #c5d3dd; }
+.code .sh, .code .si, .code .sx, .code .sr, .code .ss { color: #8a5a00; }
+.code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .il { color: #b0453a; }
+.code .nt, .code .na, .code .nf, .code .nb, .code .nc { color: #28707f; }
+.code .nv, .code .vg, .code .vi, .code .vc { color: #6a4fb0; }
+.code .o, .code .p { color: #4a6577; }
 
 .article .footnotes { margin-top: 3em; font-size: 0.88em; }
 .article .footnotes-sep { border: 0; border-top: 1px solid var(--rule); margin: 3em 0 1em; }

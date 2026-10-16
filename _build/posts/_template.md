@@ -5,8 +5,10 @@ title: ""                  # what an implementer gets, not a teaser
 date: 2026-01-01
 author: ""                 # full name
 github: ""                 # GitHub handle, without @
-summary: ""                # 1-2 sentences: blog list, feed and link previews
+summary: ""                # 1-2 sentences: blog list, feed and link previews. The blog list
+                           # adds a "Read more" link after it; don't write one yourself.
 tags: []                   # e.g. validation, mapping, docker, performance, release, terminology, ai
+                           # Shown as plain labels, not links.
 matchbox: ""               # optional: the Matchbox release the post is about, e.g. 4.1.18
 original: ""               # optional: URL where the post first appeared. Renders "Originally
                            # published on ..." and points the canonical URL there.
