@@ -69,11 +69,16 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: /matchbox-blog ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
           claude_args: ${{ env.CLAUDE_ARGS }}
+      # The script is taken from main: the action may have switched to a PR
+      # branch that predates it. A missing summary never fails the run.
       - name: Usage summary
         if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: python3 .github/scripts/claude-usage.py >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          git show origin/main:.github/scripts/claude-usage.py > "$RUNNER_TEMP/claude-usage.py"
+          python3 "$RUNNER_TEMP/claude-usage.py" >> "$GITHUB_STEP_SUMMARY"
 
   iterate:
     if: >-
@@ -104,8 +109,13 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: ${{ env.CLAUDE_ARGS }}
+      # The script is taken from main: the action may have switched to a PR
+      # branch that predates it. A missing summary never fails the run.
       - name: Usage summary
         if: always() && steps.claude.outputs.execution_file != ''
+        continue-on-error: true
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: python3 .github/scripts/claude-usage.py >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          git show origin/main:.github/scripts/claude-usage.py > "$RUNNER_TEMP/claude-usage.py"
+          python3 "$RUNNER_TEMP/claude-usage.py" >> "$GITHUB_STEP_SUMMARY"

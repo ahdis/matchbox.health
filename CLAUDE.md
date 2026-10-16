@@ -10,6 +10,9 @@ Static site, served by GitHub Pages from `docs/` on `main` (merge = publish, abo
 - After changing anything in `_build/` or a post, run the build and commit `docs/` with it. CI (`check.yml`)
   fails when `docs/` differs from what the build produces.
 - Blog posts: follow `.claude/skills/matchbox-blog/SKILL.md`.
+- The agent in the GitHub Action cannot change `.claude/` or `.github/workflows/`; those are changed in a PR by
+  a person or a local Claude Code session. The workflow always runs as it is on `main`; the skill and this
+  file come from the PR branch the agent works on.
 - Checks (need `npm install` and a server on 8081: `npm run serve`): `node _design/tools/linkcheck.mjs`,
   `node _design/tools/test-consent.mjs`, `node _design/tools/blog-shots.mjs`.
 - `_design/DESIGN-NOTES.md` explains the measured layout; read it before changing `site.css`.
