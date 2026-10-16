@@ -74,6 +74,13 @@ python3 _build/build.py
 It fails with a clear message on a broken post (missing field, date and file name differ, a `#` title). Fix the
 post and run it again. Never edit files in `docs/` by hand; they are overwritten by the build.
 
+Every post gets these from the build (`_build/blog.py`, styled in `site.css`), so do not write them into the post:
+
+- **Read more link.** On `/blog/`, each entry shows the `summary` followed by a "Read more →" link to the post.
+  The summary is the teaser; don't end it with "read more".
+- **Tags as plain labels.** `matchbox` and `tags` are small text separated by dots, not buttons or pills, because
+  they are not links. Keep it that way unless tag pages are added.
+
 ## 5. Commit and report
 
 Commit the post, any images and the generated `docs/` changes together on the PR branch, and push:
@@ -93,3 +100,8 @@ Then comment on the PR (`gh pr comment <N> --body ...`) with:
 
 When you were started by an `@claude` comment, do what the comment asks, then build, commit, push and reply the
 same way. `@claude rebuild` means: run the build, commit the generated files, push.
+
+In the GitHub Action you cannot change `.claude/` (this skill) or `.github/workflows/`: Claude Code asks for
+approval to write `.claude/`, which nobody can give on the runner, and the Claude GitHub App has no permission
+for workflow files. If a request needs such a change, make the parts you can (`_build/`, `site.css`, the
+template), and put the exact text for the rest in your PR comment, saying which file and section it goes in.
