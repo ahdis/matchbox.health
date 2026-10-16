@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generates the static pages from shared chrome plus per-page bodies.
 Output is plain HTML that GitHub Pages serves as-is (no Jekyll, no Actions)."""
-import os, re, sys
+import html, os, re, shutil, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from layout import page, rel, standalone
+import blog, layout
+from layout import SITE, page, rel, standalone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Only docs/ is published (Pages source: main /docs), so the sources next to it stay off the site.
@@ -193,13 +194,57 @@ PAGES = [
      privacy_body, '/privacy-policy'),
 ]
 
-for name, title, desc, body, canonical in PAGES:
-    base = '../' * name.count('/')
-    out = page(title, desc, localize(body, base), canonical, base=base)
+def write(name, out):
     dest = os.path.join(OUT, name)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     open(dest, 'w', encoding='utf-8').write(out)
     print(f"  {name:28} {len(out):7} bytes")
+
+# The blog first: whether it has posts decides if the nav shows "Blog".
+posts = blog.load()
+layout.SHOW_BLOG = bool(posts)
+
+for name, title, desc, body, canonical in PAGES:
+    base = '../' * name.count('/')
+    write(name, page(title, desc, localize(body, base), canonical, base=base))
+
+# --------------------------------------------------------------------------
+# Blog: /blog/, /blog/<year>/<slug>/, /blog/feed.xml. Regenerated from scratch
+# so a renamed or deleted post does not linger on the site.
+# --------------------------------------------------------------------------
+shutil.rmtree(os.path.join(OUT, 'blog'), ignore_errors=True)
+if posts:
+    md = blog.markdown()
+    rendered = {}
+    for p in posts:
+        rendered[p['slug']] = md.render(p['body'])
+        name = p['path'].strip('/') + '/index.html'
+        base = '../' * name.count('/')
+        write(name, page(f"{html.escape(p['title'])} &mdash; matchbox.health",
+                         html.escape(p['summary']),
+                         localize(blog.post_body(p, rendered[p['slug']]), base),
+                         p.get('original') or p['path'], base=base,
+                         og_type='article', head=blog.head(p)))
+    write('blog/index.html', page('Blog &mdash; matchbox.health',
+                                  blog.INDEX_LEDE,
+                                  localize(blog.index_body(posts), '../'), '/blog/',
+                                  base='../', head=blog.head()))
+    write('blog/feed.xml', blog.feed(posts, rendered))
+
+# --------------------------------------------------------------------------
+# sitemap.xml. A post whose canonical URL is elsewhere (`original:`) is left
+# out: a sitemap should only list URLs that are their own canonical.
+# --------------------------------------------------------------------------
+SITEMAP = [('/', 'monthly', '1.0'), ('/features/', 'monthly', '0.8'),
+           ('/privacy-policy/', 'yearly', '0.3')]
+if posts:
+    SITEMAP.append(('/blog/', 'weekly', '0.6'))
+    SITEMAP += [(p['path'], 'yearly', '0.5') for p in posts if not p.get('original')]
+write('sitemap.xml', '<?xml version="1.0" encoding="UTF-8"?>\n'
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+      + ''.join(f'  <url><loc>{SITE}{loc}</loc><changefreq>{freq}</changefreq>'
+                f'<priority>{prio}</priority></url>\n' for loc, freq, prio in SITEMAP)
+      + '</urlset>\n')
 # 404.html is generated separately -- see layout.standalone().
 NOTFOUND_CSS = """
 @font-face { font-family: Poppins; font-weight: 400; font-display: swap;

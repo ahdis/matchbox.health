@@ -3,16 +3,19 @@
 Static rebuild of the Squarespace 7.1 site for **matchbox**, ahdis's open-source
 FHIR validation and mapping server, ready to serve from GitHub Pages.
 
-Plain HTML, CSS and one small script. No Jekyll, no Actions, no build step at
-serve time — the generated pages are committed.
+Plain HTML, CSS and one small script. No Jekyll and no build step at serve
+time: the generated pages are committed, and Pages serves them as they are.
 
 ```
 docs/        the published site — the only directory GitHub Pages serves
-  index.html  features/  privacy-policy/  404.html
+  index.html  features/  privacy-policy/  blog/  404.html
   assets/     css, js, images, webfonts
   CNAME  robots.txt  sitemap.xml  .nojekyll
-_build/      the generator (shared chrome + page bodies)
-_design/     measurement tools, design notes, privacy review
+_build/      the generator (shared chrome, page bodies, blog)
+  posts/      one Markdown file per blog post, and _template.md
+.claude/     the blog agent's instructions (skills/matchbox-blog)
+.github/     check.yml (every PR) and claude.yml (the blog agent)
+_design/     measurement tools, design notes, privacy review, blog plan
 _reference/  the archived Squarespace original
 ```
 
@@ -21,17 +24,50 @@ Everything outside `docs/` stays in the repo and is not served on the site.
 ## Working on it
 
 ```sh
-python3 _build/build.py             # regenerate the pages  (npm run build)
-python3 -m http.server 8081 -d docs # serve locally         (npm run serve)
+npm run setup    # once: .venv with requirements.txt, Playwright for the checks
+npm run build    # regenerate docs/ from _build/
+npm run serve    # http://localhost:8081
+npm run check    # links and consent, against the running server
 ```
 
 Edit `_build/`, `docs/assets/css/site.css` or `docs/assets/js/site.js` —
-**never** the generated `docs/index.html`, `docs/features/index.html`,
-`docs/privacy-policy/index.html` or `docs/404.html`, which are overwritten on
-every build.
+**never** the generated HTML in `docs/`, `docs/sitemap.xml` or `docs/blog/`,
+which are overwritten on every build. Commit the regenerated `docs/` together
+with the change: CI fails a PR whose `docs/` differs from what the build
+produces.
 
 `docs/.nojekyll` tells GitHub Pages to serve the folder as it is, without
 running Jekyll.
+
+## Blog
+
+Posts are Markdown files in `_build/posts/`, published at
+`/blog/<year>/<slug>/` (the URL scheme of the ahdis.ch blog), with an index at
+`/blog/` and an Atom feed at `/blog/feed.xml`. "Blog" appears in the header and
+footer once there is at least one post.
+
+1. Copy `_build/posts/_template.md` to `_build/posts/YYYY-MM-DD-<slug>.md`, fill
+   in the front matter and write the draft. The HTML comment at the top is for
+   notes to the agent ("keep the text unchanged", who it is for).
+2. Open a PR. The **Claude** workflow runs the `matchbox-blog` skill: it
+   completes the front matter, edits the text for implementers (unless told
+   not to), builds, commits to the PR branch and comments what it did.
+3. Iterate with PR comments that mention `@claude`. `@claude rebuild` just
+   regenerates `docs/`.
+4. The **Check** workflow attaches a `preview` artifact with the built site and
+   screenshots of every blog page at 1440 and 390px. For the real thing:
+   `gh pr checkout <n> && npm run serve`.
+5. Merge. The post is live about 30 seconds later.
+
+A post that first appeared elsewhere sets `original:`. It then says
+"Originally published on …", its canonical URL points to the original, and it
+is left out of `sitemap.xml`.
+
+The agent authenticates with a Claude subscription token, created with
+`claude setup-token` and stored as the repository secret
+`CLAUDE_CODE_OAUTH_TOKEN`. It uses that subscription's limits. The Claude
+GitHub App must be installed on the repository. Only users with write access
+can start the agent.
 
 ## Checking it against the original
 
@@ -91,6 +127,16 @@ Live on GitHub Pages at <https://www.matchbox.health>, cut over from Squarespace
 on 2026-08-19. Pages serves `main` / `/docs`; `docs/CNAME` holds
 `www.matchbox.health`. (It served `main` / root until 2026-10, which published
 the generator, the design notes and the Squarespace archive along with the site.)
+HTTPS is enforced, so `http://` redirects to `https://`.
+
+Publishing is a push to `main`, normally a merged PR. GitHub then runs its
+built-in `pages-build-deployment` workflow (it is not a file in this repo),
+which packs `docs/` as it is and deploys it, in about 30 seconds. Pages sends
+`cache-control: max-age=600`, so visitors may see the old page for up to ten
+minutes. If the deployment fails, the previous version stays live. To check:
+`gh api repos/ahdis/matchbox.health/pages/builds/latest`. Changing the Pages
+source does not start a build on its own; `gh api -X POST
+repos/ahdis/matchbox.health/pages/builds` does.
 
 DNS is Google Cloud DNS, zone `matchbox-health` in project `fhir-ch`:
 

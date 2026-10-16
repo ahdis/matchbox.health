@@ -1,8 +1,8 @@
 """Shared chrome for every page. Kept in one place so the header, footer and
 consent banner cannot drift between the generated files.
 
-The nav is entirely external on this site -- matchbox.health links out to
-ahdis.ch, GitHub and the test server, and has no internal nav items at all.
+The nav is external apart from "Blog" -- matchbox.health links out to ahdis.ch,
+GitHub and the test server. "Blog" only appears once there is a post to show.
 """
 
 NAV = [
@@ -23,6 +23,18 @@ FOOTER_COLS = [
      ("Contact", "https://www.ahdis.ch/en/contact"),
      ("Privacy Policy", "/privacy-policy")],
 ]
+
+# Inserted right after "Get Help" in the header and in the first footer column.
+# build.py sets SHOW_BLOG when _build/posts/ holds at least one post.
+BLOG = ("Blog", "/blog")
+SHOW_BLOG = False
+
+
+def _with_blog(links):
+    if not SHOW_BLOG:
+        return links
+    i = [label for label, _ in links].index("Get Help") + 1
+    return links[:i] + [BLOG] + links[i:]
 
 SOCIAL = [
     ("Email ahdis", "mailto:info@ahdis.ch",
@@ -62,7 +74,7 @@ def _link(label, href, base, extra=""):
 
 
 def header(base=""):
-    items = "\n".join(f"          <li>{_link(l, h, base)}</li>" for l, h in NAV)
+    items = "\n".join(f"          <li>{_link(l, h, base)}</li>" for l, h in _with_blog(NAV))
     return f"""  <header class="header">
     <div class="header__inner">
       <a class="header__logo" href="{base or './'}" aria-label="matchbox.health home">
@@ -102,7 +114,7 @@ def footer(base=""):
         "        <ul>\n"
         + "\n".join(f"          <li>{_link(l, h, base)}</li>" for l, h in col)
         + "\n        </ul>"
-        for col in FOOTER_COLS)
+        for col in [_with_blog(FOOTER_COLS[0])] + FOOTER_COLS[1:])
     return f"""  <footer class="footer">
     <div class="footer__grid">
       <div class="footer__brand">
@@ -142,9 +154,14 @@ def footer(base=""):
   </div>"""
 
 
-def page(title, description, body, canonical="/", base="", indexable=True):
-    canon = (f'<link rel="canonical" href="{SITE}{canonical}">' if indexable
+def page(title, description, body, canonical="/", base="", indexable=True,
+         og_type="website", head=""):
+    """`canonical` is a site path, or a full URL when the page's text first
+    appeared elsewhere (a cross-posted blog post). `head` is extra <head> markup."""
+    canon_url = canonical if canonical.startswith("http") else SITE + canonical
+    canon = (f'<link rel="canonical" href="{canon_url}">' if indexable
              else '<meta name="robots" content="noindex">')
+    head = head and head.rstrip("\n") + "\n"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -156,13 +173,13 @@ def page(title, description, body, canonical="/", base="", indexable=True):
 <meta property="og:site_name" content="matchbox.health">
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{description}">
-<meta property="og:type" content="website">
-<meta property="og:url" content="{SITE}{canonical}">
+<meta property="og:type" content="{og_type}">
+<meta property="og:url" content="{canon_url}">
 <meta property="og:image" content="{SITE}/assets/img/matchbox-logo.webp">
 <meta property="og:image:width" content="725">
 <meta property="og:image:height" content="306">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="{base}assets/img/favicon.ico" sizes="any">
+{head}<link rel="icon" href="{base}assets/img/favicon.ico" sizes="any">
 <link rel="preload" as="font" type="font/woff2" href="{base}assets/fonts/poppins-400-latin.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="{base}assets/fonts/poppins-500-latin.woff2" crossorigin>
 <link rel="stylesheet" href="{base}assets/css/site.css">

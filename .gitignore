@@ -3,3 +3,4 @@ node_modules
 _design/screens/
 *.log
 __pycache__/
+.venv/
