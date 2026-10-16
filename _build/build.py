@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from layout import page, rel, standalone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Only docs/ is published (Pages source: main /docs), so the sources next to it stay off the site.
+OUT = os.path.join(ROOT, 'docs')
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 def read(name):
@@ -194,7 +196,7 @@ PAGES = [
 for name, title, desc, body, canonical in PAGES:
     base = '../' * name.count('/')
     out = page(title, desc, localize(body, base), canonical, base=base)
-    dest = os.path.join(ROOT, name)
+    dest = os.path.join(OUT, name)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     open(dest, 'w', encoding='utf-8').write(out)
     print(f"  {name:28} {len(out):7} bytes")
@@ -226,6 +228,6 @@ a.button:hover { opacity: 0.85; }
 out = standalone('Page not found &mdash; matchbox.health',
                  'The page you asked for is not on www.matchbox.health.',
                  NOTFOUND_CSS.strip())
-open(os.path.join(ROOT, '404.html'), 'w', encoding='utf-8').write(out)
+open(os.path.join(OUT, '404.html'), 'w', encoding='utf-8').write(out)
 print(f"  {'404.html':28} {len(out):7} bytes")
 print("build complete")

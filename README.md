@@ -7,26 +7,31 @@ Plain HTML, CSS and one small script. No Jekyll, no Actions, no build step at
 serve time — the generated pages are committed.
 
 ```
-index.html  features/  privacy-policy/  404.html
-assets/     css, js, images, webfonts
-_build/     the generator (shared chrome + page bodies)
-_design/    measurement tools, design notes, privacy review
-_reference/ the archived Squarespace original
+docs/        the published site — the only directory GitHub Pages serves
+  index.html  features/  privacy-policy/  404.html
+  assets/     css, js, images, webfonts
+  CNAME  robots.txt  sitemap.xml  .nojekyll
+_build/      the generator (shared chrome + page bodies)
+_design/     measurement tools, design notes, privacy review
+_reference/  the archived Squarespace original
 ```
+
+Everything outside `docs/` stays in the repo and is not served on the site.
 
 ## Working on it
 
 ```sh
-python3 _build/build.py     # regenerate the pages  (npm run build)
-python3 -m http.server 8081 # serve locally         (npm run serve)
+python3 _build/build.py             # regenerate the pages  (npm run build)
+python3 -m http.server 8081 -d docs # serve locally         (npm run serve)
 ```
 
-Edit `_build/`, `assets/css/site.css` or `assets/js/site.js` — **never** the
-generated `index.html`, `features/index.html`, `privacy-policy/index.html` or
-`404.html`, which are overwritten on every build.
+Edit `_build/`, `docs/assets/css/site.css` or `docs/assets/js/site.js` —
+**never** the generated `docs/index.html`, `docs/features/index.html`,
+`docs/privacy-policy/index.html` or `docs/404.html`, which are overwritten on
+every build.
 
-`.nojekyll` is required: without it GitHub Pages runs Jekyll, which skips
-`_`-prefixed directories.
+`docs/.nojekyll` tells GitHub Pages to serve the folder as it is, without
+running Jekyll.
 
 ## Checking it against the original
 
@@ -80,30 +85,33 @@ unrecoverable.
 italic webfonts labelled as normal, and why forcing `opacity: 1` corrupts colour
 readings).
 
-## Going live
+## Hosting
 
-**Published for review at <https://ahdis.github.io/matchbox.health/>** — Pages
-serves `main` / root. `www.matchbox.health` is still Squarespace; DNS has not
-been touched and no `CNAME` file exists.
+Live on GitHub Pages at <https://www.matchbox.health>, cut over from Squarespace
+on 2026-08-19. Pages serves `main` / `/docs`; `docs/CNAME` holds
+`www.matchbox.health`. (It served `main` / root until 2026-10, which published
+the generator, the design notes and the Squarespace archive along with the site.)
+
+DNS is Google Cloud DNS, zone `matchbox-health` in project `fhir-ch`:
+
+| record | value |
+|---|---|
+| `matchbox.health` A | `185.199.108.153`, `.109.153`, `.110.153`, `.111.153` |
+| `www` CNAME | `ahdis.github.io.` |
+
+Both are TTL 300, so a rollback to Squarespace propagates in five minutes.
+The apex is served too — GitHub 301-redirects `matchbox.health` to the `www`
+host named in `CNAME`.
+
+A leftover `638pnhw7wxaatxmb5xhk` CNAME to `verify.squarespace.com` is still in
+the zone. It is harmless; remove it once Squarespace is cancelled.
 
 The repo is **public** because it has to be: the ahdis org is on the free plan,
 which only serves Pages from public repos. `ahdis/matchbox` publishes its mkdocs
 at `ahdis.github.io/matchbox/` with no CNAME, so there is no collision.
 
-Remaining steps, whenever you want to cut over:
-
-1. Add a `CNAME` file containing `www.matchbox.health`.
-2. DNS: apex A records to `185.199.108.153`, `.109.153`, `.110.153`, `.111.153`;
-   `www` CNAME to `ahdis.github.io`. Currently `www` is a CNAME to
-   `ext-cust.squarespace.com`.
-3. Wait for the certificate, then enable **Enforce HTTPS**.
-4. Verify, *then* cancel Squarespace.
-
-One thing to know while reviewing on the `ahdis.github.io` URL: `404.html` has
-to work at any depth, so its stylesheet is inlined and its font references are
-root-absolute. On the preview URL those two fonts 404 and the page falls back to
-Helvetica; on the custom domain it renders in Poppins. Its single link
-self-corrects for the preview prefix.
+Note that `ahdis.github.io/matchbox.health/` no longer works — Pages redirects
+it to the custom domain once one is set. That is unavoidable, not a bug.
 
 ## Licence
 
