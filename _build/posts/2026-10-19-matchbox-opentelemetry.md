@@ -1,29 +1,12 @@
 ---
-# Copy to _build/posts/YYYY-MM-DD-<slug>.md. The date in the file name must match
-# `date:`, and the post is published at /blog/<year>/<slug>/.
-title: ""                  # what an implementer gets, not a teaser
+title: Monitoring Matchbox with OpenTelemetry
 date: 2026-10-19
-author: "Quentin Ligier                 # full name
-github: "qligier"                 # GitHub handle, without @
-summary: "How busy is your Matchbox server? Which validations are slow, and is it about to run out of memory? Through OpenTelemetry, the open standard that most monitoring tools support, Matchbox now sends its metrics, traces and logs to a monitoring platform such as Traceway, which collects them and gives you the answers. In this hands-on tutorial, Quentin shows how to set it up in a few minutes, build a dashboard and add alerts, so you always have a clear view of how your validation service is doing."                # 1-2 sentences: blog list, feed and link previews. The blog list
-                           # adds a "Read more" link after it; don't write one yourself.
-tags: [validation performance telemetry]                   # e.g. validation, mapping, docker, performance, release, terminology, ai
-                           # Shown as plain labels, not links.
-matchbox: ""               # optional: the Matchbox release the post is about, e.g. 4.1.18
-original: "https://www.ahdis.ch/en/blog/2026/matchbox-telemetry"               # optional: URL where the post first appeared. Renders "Originally
-                           # published on ..." and points the canonical URL there.
-source: []                 # optional, for the agent: URLs to read (issues, PRs, an article)
+author: Quentin Ligier
+github: qligier
+summary: "Matchbox can export its metrics, traces and logs with OpenTelemetry. This tutorial turns the export on, sends the data to Traceway, and sets up a dashboard and alerts for a Matchbox server."
+tags: [validation, performance, telemetry]
+original: https://www.ahdis.ch/en/blog/2026/matchbox-telemetry
 ---
-
-<!--
-Notes for the agent. Say who the post is for, what must stay as it is, and what
-to cut or add. HTML comments never reach the site. The agent removes this block.
-
-If the post is ready as you wrote it, say so ("only check and build"); the agent
-then fixes the format and links but leaves the text alone.
--->
-
-# Monitoring Matchbox with OpenTelemetry
 
 If you run Matchbox as a shared FHIR validation service, sooner or later someone will ask how many resources you validate, why some `$validate` calls are so slow, or whether the server is running out of memory.
 Recent Matchbox releases can answer these questions themselves by exporting metrics, traces and logs with OpenTelemetry.

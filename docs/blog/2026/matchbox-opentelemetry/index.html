@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring Matchbox with OpenTelemetry &mdash; matchbox.health</title>
+<meta name="description" content="Matchbox can export its metrics, traces and logs with OpenTelemetry. This tutorial turns the export on, sends the data to Traceway, and sets up a dashboard and alerts for a Matchbox server.">
+<link rel="canonical" href="https://www.ahdis.ch/en/blog/2026/matchbox-telemetry">
+<meta property="og:site_name" content="matchbox.health">
+<meta property="og:title" content="Monitoring Matchbox with OpenTelemetry &mdash; matchbox.health">
+<meta property="og:description" content="Matchbox can export its metrics, traces and logs with OpenTelemetry. This tutorial turns the export on, sends the data to Traceway, and sets up a dashboard and alerts for a Matchbox server.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://www.ahdis.ch/en/blog/2026/matchbox-telemetry">
+<meta property="og:image" content="https://www.matchbox.health/assets/img/social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The matchbox logo">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" type="application/atom+xml" title="matchbox.health blog" href="https://www.matchbox.health/blog/feed.xml">
+<meta property="article:published_time" content="2026-10-19">
+<meta property="article:tag" content="validation">
+<meta property="article:tag" content="performance">
+<meta property="article:tag" content="telemetry">
+<link rel="icon" href="../../../assets/img/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="../../../assets/img/feed-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="../../../assets/fonts/poppins-400-latin.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="../../../assets/fonts/poppins-500-latin.woff2" crossorigin>
+<link rel="stylesheet" href="../../../assets/css/site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to Content</a>
+  <header class="header">
+    <div class="header__inner">
+      <a class="header__logo" href="../../../" aria-label="matchbox.health home">
+        <img src="../../../assets/img/matchbox-logo.webp" width="725" height="306" alt="matchbox">
+      </a>
+      <button class="header__toggle" type="button" aria-expanded="false"
+              aria-controls="site-menu" aria-label="Open Menu">
+        <span class="header__toggle-icon" aria-hidden="true"></span>
+      </button>
+      <nav class="header__nav" aria-label="Main">
+        <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <div class="menu" id="site-menu" hidden>
+    <nav class="menu__nav" aria-label="Main">
+      <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+<main id="main">
+  <section class="section section--dark post-hero">
+    <div class="wrap post-hero__inner">
+      <div class="column">
+        <p class="post-hero__crumb"><a href="../../../blog/">Blog</a></p>
+        <h1 class="post-hero__title">Monitoring Matchbox with OpenTelemetry</h1>
+        <p class="post-hero__meta"><time datetime="2026-10-19">19 October 2026</time> &middot; Quentin Ligier (<a href="https://github.com/qligier" target="_blank" rel="noopener">@qligier</a>)</p>
+        <ul class="tags" aria-label="Tags"><li class="tag">validation</li><li class="tag">performance</li><li class="tag">telemetry</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--white post">
+    <div class="wrap post__inner">
+      <article class="column article">
+          <p class="article__original">Originally published on <a href="https://www.ahdis.ch/en/blog/2026/matchbox-telemetry" target="_blank" rel="noopener">ahdis.ch</a> on 19 October 2026.</p>
+<p>If you run Matchbox as a shared FHIR validation service, sooner or later someone will ask how many resources you validate, why some <code>$validate</code> calls are so slow, or whether the server is running out of memory.
+Recent Matchbox releases can answer these questions themselves by exporting metrics, traces and logs with OpenTelemetry.
+In this tutorial, you'll turn that on, send the data to Traceway (a simple and standalone monitoring platform) and set up a dashboard and alerts for your Matchbox server.</p>
+<p>You'll need Docker with Docker Compose, and a shell with <code>curl</code> and <code>openssl</code>.
+You don't need any prior experience with OpenTelemetry or Traceway.</p>
+<h2 id="what-matchbox-measures">What Matchbox measures</h2>
+<p>Matchbox produces three kinds of telemetry.
+<strong>Metrics</strong> are numbers tracked over time, like the number of validations per minute.
+<strong>Traces</strong> record a single request step by step: each step, such as a database query, is a <em>span</em> with its own duration.
+<strong>Logs</strong> are the messages Matchbox writes as it works, like the ones you see in its console.</p>
+<p>Within <strong>metrics</strong>, we distinguish three types of data:</p>
+<ol>
+<li><strong>Counters</strong> are running totals that only ever go up, like the number of validations since Matchbox started. What you usually chart is how fast they grow, e.g. validations per second.</li>
+<li><strong>Timers</strong> measure how long something takes, each time it happens. A timer also counts the events it measures, so <code>matchbox.validation.duration</code> gives you both the number of validations and their total, average and maximum duration.</li>
+<li><strong>Gauges</strong> hold a current value that can go up or down, like the heap memory in use or the number of cached engines. Matchbox reads the value each time it exports metrics.</li>
+</ol>
+<p>Matchbox gets most of this from the OpenTelemetry Spring Boot starter, a library that adds OpenTelemetry to Spring Boot applications.
+On top of that, Matchbox adds a few metrics of its own.</p>
+<h3 id="spring-boot-metrics">Spring Boot metrics</h3>
+<p>Matchbox is a Spring Boot application, and Spring Boot already measures a lot about itself through Micrometer, its built-in metrics library.
+When <code>otel.instrumentation.micrometer.enabled=true</code> is set, the starter forwards all of these metrics to OpenTelemetry under the same names.
+The most useful ones for a Matchbox server are:</p>
+<ul>
+<li><code>jvm.memory.used</code> (gauge): memory in use, in bytes, per memory pool. The <code>area</code> tag separates <code>heap</code> from <code>nonheap</code> memory, and <code>id</code> names the pool. <code>jvm.memory.max</code> gives the matching limits.</li>
+<li><code>jvm.memory.usage.after.gc</code> (gauge): the share of long-lived heap memory still in use after the last garbage collection, from 0 to 1. This is the best single sign that Matchbox is running out of memory.</li>
+<li><code>jvm.gc.pause</code> (timer): garbage-collection pauses. During a pause, the JVM stops all other threads, so requests have to wait.</li>
+<li><code>process.cpu.usage</code> and <code>system.cpu.usage</code> (gauges): the CPU used by Matchbox and by the whole host, from 0 to 1.</li>
+<li><code>jdbc.connections.active</code>, <code>jdbc.connections.idle</code> and <code>jdbc.connections.max</code> (gauges): connections in the database connection pool. If <code>active</code> stays at <code>max</code>, requests are waiting for a free connection. In Matchbox, the pool is only reported under these names, not under HikariCP's own <code>hikaricp.connections.*</code>.</li>
+<li><code>http.server.requests</code> (timer): incoming HTTP requests, tagged with method, status and <code>uri</code>. HAPI FHIR serves the FHIR API through its own servlet instead of Spring MVC, so Spring can't tell the FHIR endpoints apart: they all end up under <code>uri=UNKNOWN</code>. Only Spring's own endpoints, such as Actuator's, get their real path.</li>
+<li><code>logback.events</code> (counter): log events, tagged by <code>level</code>. A sudden rise in <code>error</code> events is often the first sign that something is wrong.</li>
+</ul>
+<p>Spring Boot also reports thread counts, Tomcat sessions, free disk space and more.
+To see the complete list on your server, call <code>/matchboxv3/actuator/metrics</code>.</p>
+<p>The starter also takes a few measurements of its own, named after OpenTelemetry's conventions.
+These are exported as soon as OpenTelemetry is on, even without the Micrometer setting:</p>
+<ul>
+<li><code>http.server.request.duration</code> (timer): incoming HTTP requests, tagged with method and status code. Like <code>http.server.requests</code>, it counts the FHIR requests but doesn't break them down by endpoint. For validation times, <code>matchbox.validation.duration</code> is more precise.</li>
+<li>JVM metrics such as <code>jvm.memory.used</code>, <code>jvm.gc.duration</code>, <code>jvm.thread.count</code> and <code>jvm.cpu.time</code>. They overlap with Micrometer's JVM metrics, and two of them even share a name (<code>jvm.memory.used</code> and <code>jvm.memory.committed</code>), but with different tags: <code>jvm.memory.type</code> and <code>jvm.memory.pool.name</code> instead of <code>area</code> and <code>id</code>. A filter on <code>area</code> only matches Micrometer's version. If you don't need both, turn off the starter's version with <code>otel.instrumentation.runtime-telemetry.enabled=false</code>.</li>
+</ul>
+<h3 id="matchboxs-own-metrics">Matchbox's own metrics</h3>
+<p>The following metrics can be enabled by setting <code>otel.instrumentation.micrometer.enabled=true</code> in your configuration.</p>
+<ul>
+<li><code>matchbox.validation.count</code> (counter): number of FHIR resources validated, through either the FHIR <code>$validate</code> operation or the Gazelle validation API (used by IHE's Gazelle test tools).</li>
+<li><code>matchbox.validation.duration</code> (timer): how long each validation took.</li>
+<li><code>matchbox.transformation.count</code> (counter): number of resources transformed with <code>StructureMap/$transform</code>.</li>
+<li><code>matchbox.engines.cached.permanent.number</code> and <code>matchbox.engines.cached.transient.number</code> (gauges): how many validation engines Matchbox holds in memory. An engine is a validator loaded with a particular set of ImplementationGuides (IGs). Matchbox caches engines so it doesn't rebuild them for every request. Permanent engines stay cached; transient engines expire automatically after an hour.</li>
+<li><code>matchbox.engines.creating.number</code> (gauge): how many engines Matchbox is building right now.</li>
+<li><code>matchbox.igs.number</code> (gauge): number of installed IGs.</li>
+<li><code>matchbox.engines.fetch.cache.size</code> (gauge, from Matchbox v5.0.0): the sum of all resources stored in the engines' fetch cache, that is configurable with <code>MatchboxEngine.setFetchCacheMaxSize(int)</code>.</li>
+</ul>
+<h3 id="traces">Traces</h3>
+<p>The starter traces every incoming HTTP request, along with the database queries Matchbox runs while handling it.
+Each request becomes one span, with attributes such as the URL path (<code>url.path</code>), the query parameters (<code>url.query</code>, e.g. the <code>profile</code> to validate against) and the HTTP status.
+HAPI FHIR does its own routing instead of Spring MVC, so these spans carry the concrete URL path but no route template.
+In Traceway, that means one endpoint per path: one for <code>POST /matchboxv3/fhir/Patient/$validate</code>, another for <code>POST /matchboxv3/fhir/Observation/$validate</code>, and so on.</p>
+<p>Calls to the terminology server and package downloads aren't traced, because the validator makes them with HTTP clients that the starter doesn't instrument.
+Their time counts toward the request's duration, but you can't see it separately.
+Matchbox doesn't add spans of its own yet either, so a trace tells you <em>which</em> validations are slow, not <em>why</em>.</p>
+<p>Database queries that run outside a request, at startup or in HAPI FHIR's background jobs, are exported too, but Traceway drops them because they don't belong to any endpoint.</p>
+<p><img src="../../../assets/img/blog/2026/matchbox-opentelemetry/trace.png" alt="Screenshot of a trace" loading="lazy" /></p>
+<h3 id="logs">Logs</h3>
+<p>Matchbox also sends its logs.
+The starter hooks into Logback, the logging library Matchbox uses, and exports every log event as soon as OpenTelemetry is on, with no further setting.
+Matchbox still writes the same lines to its console, so <code>docker compose logs</code> keeps working.</p>
+<p>Each record carries its level, its message and the name of the logger that wrote it, e.g. <code>ch.ahdis.matchbox.engine.MatchboxEngine</code>.
+Only what Logback lets through is exported: INFO and above by default.
+The levels you set under <code>logging.level</code> apply to the console and the export alike.
+Expect a burst of a couple of hundred records at startup.</p>
+<p>Logs written while Matchbox handles a request carry that request's trace ID, which ties them to the request.
+For a <code>$validate</code> request, these are lines such as &quot;Using profile for validation …&quot; and &quot;finished validation …&quot;, plus any error, for example when the requested IG isn't installed.
+They also tell you whether Matchbox reused a cached engine (&quot;Using cached validate engine for …&quot;) or had to build one (&quot;Creating new validate engine for …&quot;), which the trace alone can't show.
+In Traceway, these lines appear in the <strong>Logs</strong> card of the endpoint's detail page, under <strong>This Trace</strong>.
+All logs, whether they're part of a trace or not, including the startup ones, are on the project's <strong>Logs</strong> page.</p>
+<p><img src="../../../assets/img/blog/2026/matchbox-opentelemetry/logs.png" alt="Screenshot of the logs generated during a validation" loading="lazy" /></p>
+<h3 id="gen-ai-metrics-optional">Gen-AI metrics (optional)</h3>
+<p>Matchbox can ask an LLM to analyze failed validations (&quot;AI-assisted validation&quot;).
+If you use that feature, Matchbox also records how many tokens each LLM call used (<code>gen_ai.client.token.usage</code>) and how long it took (<code>gen_ai.client.operation.duration</code>), broken down by provider, model, and input vs. output tokens.
+To set up AI-assisted validation, see the <a href="https://github.com/ahdis/matchbox/blob/main/docs/validation-with-ai-tutorial.md" target="_blank" rel="noopener">Validation with AI tutorial</a>.</p>
+<h2 id="where-the-data-goes">Where the data goes</h2>
+<p><a href="https://opentelemetry.io/" target="_blank" rel="noopener">OpenTelemetry</a> (OTel) is an open standard for collecting metrics, traces and logs, and most monitoring tools support it.
+Matchbox sends its data over OTLP, OpenTelemetry's network protocol.</p>
+<p>In this tutorial, that data goes to <a href="https://tracewayapp.com" target="_blank" rel="noopener">Traceway</a>, an MIT-licensed observability platform.
+We picked it because its configuration is minimal, and deployment is easy: Traceway is a single container image; it receives OTLP directly, stores everything in SQLite, DuckDB or PostgreSQL, and has dashboards and alerting built in.
+This makes it a good solution for experimentation with telemetry.
+The usual self-hosted stack is an OpenTelemetry Collector plus one store per kind of data, such as Prometheus for metrics, Jaeger or Tempo for traces and Loki for logs, with Grafana on top for dashboards and alerts.
+That's several services to set up and wire together, but once that is done, they are much more powerful.</p>
+<p>Nothing on the Matchbox side depends on Traceway, though.
+Matchbox only speaks standard OpenTelemetry, so this setup works the same with any backend that accepts OTLP, whether that's your own Grafana stack or a hosted service such as Grafana Cloud, Honeycomb or Dynatrace.
+To switch, you change the endpoint and the credentials.
+Matchbox sends the same metrics, traces and logs either way, although some backends adapt the names to their own conventions: Prometheus, for example, replaces the dots with underscores by default.
+What does differ from tool to tool is how you build dashboards and alerts, so treat the Traceway screens in Steps 4 and 5 as a guide to what to watch, not as exact instructions.</p>
+<h2 id="step-1-start-traceway-and-create-a-project">Step 1: Start Traceway and create a project</h2>
+<p>Matchbox needs a Traceway project token before it can send anything, so start Traceway first.</p>
+<p>In an empty directory, create a <code>docker-compose.yml</code> file:</p>
+<div class="code"><span class="code__lang">yaml</span><pre><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">traceway</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/tracewayapp/traceway:sqlite</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"80:80"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"./traceway-data:/data"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">JWT_SECRET</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${JWT_SECRET}</span>
+<span class="w">      </span><span class="c1"># The default cache is sized for machines with 16 GB+</span>
+<span class="w">      </span><span class="nt">SQLITE_CACHE_SIZE_MB</span><span class="p">:</span><span class="w"> </span><span class="s">"64"</span>
+</code></pre></div>
+<p>This is Traceway's single-container image, which stores everything in SQLite under <code>./traceway-data</code>.
+<code>JWT_SECRET</code> signs Traceway's login sessions and must be at least 32 characters long.
+Generate one into a <code>.env</code> file, which Docker Compose reads automatically, and start Traceway:</p>
+<div class="code"><span class="code__lang">bash</span><pre><code><span class="nb">echo</span><span class="w"> </span><span class="s2">"JWT_SECRET=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span><span class="k">)</span><span class="s2">"</span><span class="w"> </span>&gt;<span class="w"> </span>.env
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>traceway
+</code></pre></div>
+<p>Then set up Traceway in your browser:</p>
+<ol>
+<li>Open <code>http://localhost/register</code> and create an account. The first account becomes the owner of the organization.</li>
+<li>In the header, open the project selector and select <strong>Add Project</strong>.</li>
+<li>Name the project <code>Matchbox</code>, choose the <strong>OpenTelemetry</strong> framework, and select <strong>New Project</strong>.</li>
+<li>Traceway shows the project's token. Add it to your <code>.env</code> file:</li>
+</ol>
+<div class="code"><span class="code__lang">bash</span><pre><code><span class="nb">echo</span><span class="w"> </span><span class="s2">"TRACEWAY_TOKEN=&lt;your project token&gt;"</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>.env
+</code></pre></div>
+<p>If you lose the token, you can find it again on the project's <strong>Connection</strong> page.</p>
+<h2 id="step-2-enable-telemetry-in-matchbox">Step 2: Enable telemetry in Matchbox</h2>
+<p>Telemetry is <strong>off by default</strong>.
+The stock <a href="https://github.com/ahdis/matchbox/blob/main/matchbox-server/src/main/resources/application.yaml" target="_blank" rel="noopener"><code>application.yaml</code></a> contains:</p>
+<div class="code"><span class="code__lang">yaml</span><pre><code><span class="nt">otel</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">sdk</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">disabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p>On top of that, Matchbox only registers its own metrics when <code>otel.instrumentation.micrometer.enabled</code> is <code>true</code>.
+So nothing gets exported until you opt in.</p>
+<p>Add Matchbox to your <code>docker-compose.yml</code>, under <code>services</code>:</p>
+<div class="code"><span class="code__lang">yaml</span><pre><code><span class="w">  </span><span class="nt">matchbox</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:latest</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"8080:8080"</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">OTEL_SDK_DISABLED</span><span class="p">:</span><span class="w"> </span><span class="s">"false"</span>
+<span class="w">      </span><span class="nt">OTEL_SERVICE_NAME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">matchbox</span>
+<span class="w">      </span><span class="nt">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://traceway/api/otel</span>
+<span class="w">      </span><span class="nt">OTEL_EXPORTER_OTLP_HEADERS</span><span class="p">:</span><span class="w"> </span><span class="s">"Authorization=Bearer</span><span class="nv"> </span><span class="s">${TRACEWAY_TOKEN}"</span>
+<span class="w">      </span><span class="nt">OTEL_INSTRUMENTATION_MICROMETER_ENABLED</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+<span class="w">      </span><span class="nt">OTEL_METRIC_EXPORT_INTERVAL</span><span class="p">:</span><span class="w"> </span><span class="s">"15000"</span>
+</code></pre></div>
+<p>Here's what each setting does:</p>
+<ul>
+<li><code>OTEL_SDK_DISABLED=false</code> turns on OpenTelemetry. From then on, Matchbox exports traces and logs, with no further setting.</li>
+<li><code>OTEL_SERVICE_NAME</code> is the name Traceway shows for this server.</li>
+<li><code>OTEL_EXPORTER_OTLP_ENDPOINT</code> points at Traceway. It must end in <code>/api/otel</code>: without <code>/api</code>, Traceway's web interface answers instead, and the data silently disappears.</li>
+<li><code>OTEL_EXPORTER_OTLP_HEADERS</code> sends the project token, so Traceway knows which project the data belongs to.</li>
+<li><code>OTEL_INSTRUMENTATION_MICROMETER_ENABLED=true</code> forwards Spring Boot's metrics and turns on the Matchbox-specific ones.</li>
+<li><code>OTEL_METRIC_EXPORT_INTERVAL=15000</code> sends metrics every 15 seconds instead of every 60, so you see data sooner.</li>
+</ul>
+<p>Start Matchbox:</p>
+<div class="code"><span class="code__lang">bash</span><pre><code>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>matchbox
+</code></pre></div>
+<p>If no data shows up in Traceway a minute after Matchbox has started, check <code>docker compose logs matchbox</code> for export errors.
+A <code>401</code> means the token is missing or wrong.</p>
+<p>Outside of this tutorial, you'll probably keep these settings in an override file instead.
+Spring Boot merges it over the defaults; with Docker, mount it at <code>/config/application.yaml</code>.
+Each environment variable above maps to a key in that file:</p>
+<div class="code"><span class="code__lang">yaml</span><pre><code><span class="nt">otel</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">sdk</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">disabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">  </span><span class="nt">service</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">matchbox</span>
+<span class="w">  </span><span class="nt">exporter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">otlp</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://traceway.example.com/api/otel</span>
+<span class="w">      </span><span class="nt">headers</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">Authorization</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bearer &lt;your project token&gt;</span>
+<span class="w">  </span><span class="nt">instrumentation</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">micrometer</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">metric</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">export</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15000</span><span class="w"> </span><span class="c1"># milliseconds</span>
+</code></pre></div>
+<p>A few notes:</p>
+<ul>
+<li><strong>Metrics only.</strong> Traces and logs are exported as soon as OpenTelemetry is on. To turn them off, add <code>OTEL_TRACES_EXPORTER=none</code> and <code>OTEL_LOGS_EXPORTER=none</code> (<code>otel.traces.exporter: none</code> and <code>otel.logs.exporter: none</code> in the file).</li>
+<li><strong>Sampling.</strong> By default, Matchbox sends every trace. On a busy server, you can keep only a share of them by adding <code>OTEL_TRACES_SAMPLER=parentbased_traceidratio</code> and <code>OTEL_TRACES_SAMPLER_ARG=0.1</code> (keeps 10 %). Keep in mind that Traceway computes endpoint latency and error rates from the traces it receives, so with sampling, those numbers are based on a subset of requests.</li>
+<li><strong>Actuator works without OpenTelemetry.</strong> Spring Boot Actuator, Spring Boot's built-in management endpoints, serves <code>/matchboxv3/actuator/metrics</code> even with <code>otel.sdk.disabled=true</code>. That's handy for a quick check. The settings above add the export to Traceway and the Matchbox-specific metrics.</li>
+<li><strong>Context path.</strong> All Actuator endpoints live under the Matchbox context path, e.g. <code>http://localhost:8080/matchboxv3/actuator/health</code>.</li>
+</ul>
+<h2 id="step-3-generate-some-load">Step 3: Generate some load</h2>
+<p>Matchbox needs an ImplementationGuide to validate against.
+These examples use <code>hl7.fhir.r4.core</code>, which is always installed.</p>
+<div class="code"><span class="code__lang">bash</span><pre><code><span class="nv">MB</span><span class="o">=</span>http://localhost:8080/matchboxv3
+<span class="nv">PROFILE</span><span class="o">=</span>http://hl7.org/fhir/StructureDefinition/Patient
+
+<span class="c1"># A valid Patient</span>
+curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$MB</span><span class="s2">/fhir/Patient/\$validate?profile=</span><span class="nv">$PROFILE</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/fhir+json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"resourceType":"Patient","name":[{"family":"Test"}],"gender":"other"}'</span>
+
+<span class="c1"># An invalid one — wrong data type for name</span>
+curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$MB</span><span class="s2">/fhir/Patient/\$validate"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/fhir+json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"resourceType":"Patient","name":"Test"}'</span>
+</code></pre></div>
+<p>The backslash in <code>\$validate</code> stops the shell from treating <code>$validate</code> as a variable.</p>
+<p>Two requests won't make an interesting graph, so send a couple of hundred more:</p>
+<div class="code"><span class="code__lang">bash</span><pre><code><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>seq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">200</span><span class="k">)</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"</span><span class="nv">$MB</span><span class="s2">/fhir/Patient/\$validate"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/fhir+json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">'{"resourceType":"Patient","name":"Test"}'</span>
+<span class="k">done</span>
+</code></pre></div>
+<p>For a heavier, sustained load, the Matchbox repository also includes a JMeter test plan in its <code>jmeter/</code> directory.</p>
+<h2 id="step-4-read-the-results">Step 4: Read the results</h2>
+<h3 id="4a-actuator-for-a-quick-look">4a. Actuator, for a quick look</h3>
+<div class="code"><span class="code__lang">bash</span><pre><code>curl<span class="w"> </span>-s<span class="w"> </span><span class="nv">$MB</span>/actuator/metrics/matchbox.validation.duration
+</code></pre></div>
+<div class="code"><span class="code__lang">json</span><pre><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"matchbox.validation.duration"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Duration of FHIR resource validation by Matchbox"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"baseUnit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"seconds"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"measurements"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"statistic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"COUNT"</span><span class="p">,</span><span class="w"> </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mi">28</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"statistic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"TOTAL_TIME"</span><span class="p">,</span><span class="w"> </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mf">34.953</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">"statistic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MAX"</span><span class="p">,</span><span class="w"> </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mf">20.833</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>So far, Matchbox has run 28 validations, taking 35 seconds in total, and the slowest one took almost 21 seconds.</p>
+<div class="code"><span class="code__lang">bash</span><pre><code>curl<span class="w"> </span>-s<span class="w"> </span><span class="nv">$MB</span>/actuator/metrics/matchbox.engines.cached.permanent.number
+</code></pre></div>
+<div class="code"><span class="code__lang">json</span><pre><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"matchbox.engines.cached.permanent.number"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Number of cached immutable Matchbox engines in the server"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"baseUnit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"engines"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"measurements"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"statistic"</span><span class="p">:</span><span class="w"> </span><span class="s2">"VALUE"</span><span class="p">,</span><span class="w"> </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>That confirms Matchbox is recording metrics.
+Now switch to Traceway at <code>http://localhost</code>.</p>
+<h3 id="4b-latency-and-errors-the-endpoints-page">4b. Latency and errors: the Endpoints page</h3>
+<p>Traceway turns incoming HTTP requests into <em>endpoints</em>, named after their method and route, and shows latency percentiles, throughput and error rate for each one.
+Endpoints are ranked by an impact score that combines latency, errors and volume, so the ones that hurt the most come first.</p>
+<p>Open <strong>Endpoints</strong> in the Matchbox project and find the <code>$validate</code> endpoints, one per resource type, such as <code>POST /matchboxv3/fhir/Patient/$validate</code>.
+This is where you get validation percentiles.
+The p95, for example, is the time within which 95 % of validations finish.
+Traceway computes percentiles from traces, not from metrics, which is why the dashboard below only shows average durations.</p>
+<h3 id="4c-traces-one-request-in-detail">4c. Traces: one request in detail</h3>
+<p>Click one of the <code>$validate</code> endpoints to open its detail page.
+The <strong>Spans</strong> waterfall shows a single request step by step: the top line is the whole request, and the indented lines are the database queries Matchbox ran while handling it, labelled with their SQL.</p>
+<p>For most validations, the waterfall is a single line:</p>
+<div class="code"><pre><code>POST /matchboxv3/fhir/Observation/$validate   296 ms
+</code></pre></div>
+<p>Matchbox found everything it needed in a cached engine, so it didn't query the database.
+When a validation has to look something up in the package database, for instance to find the IG that defines the requested profile, the queries appear underneath:</p>
+<div class="code"><pre><code>POST /matchboxv3/fhir/Patient/$validate                       9.4 ms
+├─ select npvre1_0.pid, … from npm_package_ver_res … join …   0.1 ms
+└─ select npvre1_0.pid, … from npm_package_ver_res … join …   0.1 ms
+</code></pre></div>
+<p>In the first example, most of the 296 ms went to checking a LOINC code on tx.fhir.org, but nothing in the trace says so: the terminology call is hidden inside the request's duration.
+Validating the same resource a second time took 18 ms, because Matchbox caches terminology results.</p>
+<p>So use traces to find the slow requests, and their <code>url.query</code> attribute to see which profile they were validated against.
+If the same validation is slow the first time and fast afterwards, Matchbox was either building a validation engine or waiting for the terminology server, and caches both.
+The <strong>Logs</strong> card below the waterfall tells you which: it shows whether the request created a new engine.</p>
+<h3 id="4d-a-matchbox-dashboard">4d. A Matchbox dashboard</h3>
+<p>Traceway shows metrics in dashboards made of widgets.
+You configure each widget in the interface by picking a metric, an aggregation such as <code>avg</code> or <code>last</code>, and optional tag filters or a group-by.</p>
+<p>Three things to know about how Matchbox's metrics look in Traceway:</p>
+<ul>
+<li>Names keep their dots, e.g. <code>matchbox.validation.count</code>.</li>
+<li>Counters arrive as running totals. Use the <code>rate</code> aggregation to turn them into &quot;per second&quot;.</li>
+<li>Timers arrive as histograms, which Traceway reduces to <code>&lt;name&gt;.avg</code> (average duration) and <code>&lt;name&gt;.count</code> (number of measurements). Traceway doesn't keep the histogram buckets, so for percentiles, use the Endpoints page.</li>
+</ul>
+<p>Open the dashboard picker (⌘K, or Ctrl K on Windows and Linux), create a dashboard for the Matchbox project, and add these widgets:</p>
+<ul>
+<li><strong>Traffic</strong>
+<ul>
+<li>Validations per second: line chart of <code>matchbox.validation.count</code>, aggregation <code>rate</code>.</li>
+<li>Transformations per second: line chart of <code>matchbox.transformation.count</code>, aggregation <code>rate</code>.</li>
+</ul>
+</li>
+<li><strong>Latency</strong>
+<ul>
+<li>Average validation time: line chart of <code>matchbox.validation.duration.avg</code>, aggregation <code>avg</code>.</li>
+</ul>
+</li>
+<li><strong>Capacity</strong>
+<ul>
+<li>Heap used: stacked area of <code>jvm.memory.used</code>, filtered on <code>area</code> = <code>heap</code>, grouped by <code>id</code> (one band per memory pool).</li>
+<li>GC pauses: line chart of <code>jvm.gc.pause.avg</code>, aggregation <code>avg</code>.</li>
+<li>Database connections in use: line chart of <code>jdbc.connections.active</code>, aggregation <code>last</code>.</li>
+</ul>
+</li>
+<li><strong>Matchbox internals</strong>
+<ul>
+<li>Cached engines: stacked area of <code>matchbox.engines.cached.permanent.number</code> and <code>matchbox.engines.cached.transient.number</code>, aggregation <code>last</code>. This one needs JSON, see below.</li>
+<li>Installed IGs: single value of <code>matchbox.igs.number</code>, aggregation <code>last</code>.</li>
+</ul>
+</li>
+</ul>
+<p>The widget editor only lets you pick one metric per widget.
+A widget can hold several sources, though, and a stacked area piles them on top of each other.
+To add the cached-engines widget, open the dashboard tab's menu, select <strong>Edit as JSON</strong>, and add this entry to the <code>widgets</code> array:</p>
+<div class="code"><span class="code__lang">json</span><pre><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Cached engines"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"widgetType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stacked_area"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"sources"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"metric"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"matchbox.engines.cached.permanent.number"</span><span class="p">,</span><span class="w"> </span><span class="nt">"aggregation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"last"</span><span class="p">,</span><span class="w"> </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Permanent"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"metric"</span><span class="p">,</span><span class="w"> </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"matchbox.engines.cached.transient.number"</span><span class="p">,</span><span class="w"> </span><span class="nt">"aggregation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"last"</span><span class="p">,</span><span class="w"> </span><span class="nt">"label"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Transient"</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Traceway generates the widget's <code>id</code> when you save.
+The <code>label</code> fields name the two bands.</p>
+<p>Here's the result of such a dashboard.
+Traceway's dashboards are simpler than Grafana's.
+The rate aggregation, for instance, is always per second, which is too fine for events as rare as validations.
+Still, the dashboard gives a good overview of the Matchbox server.</p>
+<p><img src="../../../assets/img/blog/2026/matchbox-opentelemetry/dashboard.png" alt="Screenshot of a Traceway dashboard with the previous widgets added" loading="lazy" /></p>
+<h3 id="4e-gen-ai-usage">4e. Gen-AI usage</h3>
+<p>If AI-assisted validation is enabled, each failed <code>$validate</code> that triggers an LLM analysis also records token usage.
+The token metric is a histogram too, so Traceway shows it as two metrics:</p>
+<ul>
+<li><code>gen_ai.client.token.usage.avg</code>: average tokens per LLM call. Group by <code>gen_ai.token.type</code> to split input and output tokens.</li>
+<li><code>gen_ai.client.token.usage.count</code>: number of LLM calls. Use <code>rate</code> for calls per second.</li>
+</ul>
+<p>Average tokens per call times the number of calls, times your provider's per-token price, gives you an estimate of what AI-assisted validation costs you.
+For LLM latency, chart <code>gen_ai.client.operation.duration.avg</code>.</p>
+<h2 id="step-5-alerts-worth-having">Step 5: Alerts worth having</h2>
+<p>In Traceway, you create alert rules in the interface, under <strong>Alerts</strong>.
+Each rule sends its notifications to one channel, such as email, Slack or a webhook, so set up a channel first.
+These three rules cover the basics; adjust the thresholds to your traffic:</p>
+<ul>
+<li><strong>Server errors.</strong> Type <em>Error Rate</em>, with a threshold of 5 %. This counts server errors (HTTP 5xx) on all endpoints.</li>
+<li><strong>Heap pressure.</strong> Type <em>Metric Threshold</em>, on <code>jvm.memory.usage.after.gc</code>, with aggregation <code>max</code>, operator <code>gt</code>, threshold <code>0.9</code> and a lookback of 15 minutes. This metric is the share of long-lived heap memory still in use after garbage collection, from 0 to 1, so it fires when the JVM is close to running out of memory.</li>
+<li><strong>Matchbox has gone quiet.</strong> Type <em>No Data</em>, data type <code>endpoints</code>, with 30 silence minutes. It fires when Traceway hasn't seen a single request from Matchbox for 30 minutes, which usually means the service is down or unreachable.</li>
+</ul>
+<p>Keep an eye on the engine-cache gauges too, either on the dashboard or with a <em>Metric Threshold</em> rule.
+If <code>matchbox.engines.cached.transient.number</code> keeps climbing while heap usage rises, Matchbox is creating session engines faster than they expire.
+In that case, look at the cache expiry time and the <code>onlyOneEngine</code> setting.</p>
+<h2 id="wrap-up">Wrap-up</h2>
+<p>Matchbox's telemetry stays quiet until you ask for it.
+Two settings turn it on:</p>
+<ul>
+<li><code>otel.sdk.disabled=false</code> starts OpenTelemetry and the export, traces and logs included.</li>
+<li><code>otel.instrumentation.micrometer.enabled=true</code> forwards metrics and enables the Matchbox-specific ones.</li>
+</ul>
+<p>If you only want metrics, <code>otel.traces.exporter=none</code> and <code>otel.logs.exporter=none</code> turn traces and logs off.</p>
+<p>To send everything to Traceway, point the exporter at Traceway's <code>/api/otel</code> endpoint and pass your project token in the <code>Authorization</code> header.
+The rest is standard OpenTelemetry, so moving to another backend later only means changing those two settings.</p>
+<p>With that in place, the questions from the start of this post become dashboard widgets and alerts: how much you validate and transform and how fast, how the engine cache behaves, how much memory headroom is left, which requests are slow, and how many LLM tokens AI validation uses.</p>
+<h2 id="references">References</h2>
+<ul>
+<li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">Matchbox on GitHub</a>: see <code>MatchboxMetricsConfig</code>, <code>MatchboxMetrics</code> and <code>application.yaml</code></li>
+<li><a href="https://github.com/ahdis/matchbox/blob/main/docs/docker.md" target="_blank" rel="noopener">Running Matchbox in Docker</a></li>
+<li><a href="https://github.com/ahdis/matchbox/blob/main/docs/validation-with-ai-tutorial.md" target="_blank" rel="noopener">Tutorial: Validation with AI</a></li>
+<li>Traceway: <a href="https://docs.tracewayapp.com/client/otel" target="_blank" rel="noopener">sending OpenTelemetry data</a>, <a href="https://docs.tracewayapp.com/server/sqlite" target="_blank" rel="noopener">the SQLite container</a>, <a href="https://docs.tracewayapp.com/learn/dashboards" target="_blank" rel="noopener">dashboards</a> and <a href="https://docs.tracewayapp.com/learn/alerts" target="_blank" rel="noopener">alerts</a></li>
+<li><a href="https://opentelemetry.io/docs/zero-code/java/spring-boot-starter/" target="_blank" rel="noopener">OpenTelemetry Spring Boot starter</a></li>
+<li><a href="https://opentelemetry.io/docs/languages/java/configuration/" target="_blank" rel="noopener">OpenTelemetry SDK configuration (env vars)</a></li>
+<li><a href="https://docs.spring.io/spring-boot/reference/actuator/metrics.html" target="_blank" rel="noopener">Spring Boot Actuator metrics</a></li>
+</ul>
+      </article>
+      <p class="column post__back"><a class="button" href="../../../blog/">All posts</a></p>
+    </div>
+  </section>
+</main>
+  <footer class="footer">
+    <div class="footer__grid">
+      <div class="footer__brand">
+        <div class="block footer__logo-block">
+          <a class="footer__logo" href="https://ahdis.ch/en/" target="_blank" rel="noopener">
+            <img src="../../../assets/img/ahdis-logo.webp" width="1004" height="295" alt="ahdis ag">
+          </a>
+        </div>
+        <div class="block">
+          <address class="footer__address">
+            ahdis ag<br>c/o Impact Hub Z&uuml;rich<br>Sihlquai 131<br>8005 Z&uuml;rich<br>Switzerland
+          </address>
+        </div>
+        <div class="block">
+          <nav class="footer__social" aria-label="ahdis on other services">
+            <a href="mailto:info@ahdis.ch" aria-label="Email ahdis"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 4h20v16H2V4zm10 7L3.5 5.5v.2L12 12l8.5-6.3v-.2L12 11z"/></svg></a>
+            <a href="https://x.com/oliveregger" aria-label="ahdis on X" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18.9 2H22l-7 8 8.2 12h-6.4l-5-7.3-5.8 7.3H2.9l7.5-8.6L2.5 2H9l4.6 6.7L18.9 2zm-1.1 18h1.8L7.3 3.8H5.4L17.8 20z"/></svg></a>
+            <a href="https://www.linkedin.com/company/ahdis-ag/" aria-label="ahdis on LinkedIn" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3V9zm7 0h3.8v1.7h.05c.53-1 1.83-2.05 3.75-2.05C21.6 8.65 23 10.9 23 14.3V21h-4v-6c0-1.5-.03-3.4-2.1-3.4-2.1 0-2.4 1.6-2.4 3.3V21h-4V9z"/></svg></a>
+            <a href="https://www.youtube.com/@ahdis-ch" aria-label="ahdis on YouTube" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M23 12s0-3.6-.46-5.33a2.77 2.77 0 0 0-1.95-1.96C18.86 4.25 12 4.25 12 4.25s-6.86 0-8.59.46A2.77 2.77 0 0 0 1.46 6.67C1 8.4 1 12 1 12s0 3.6.46 5.33c.26.95 1 1.7 1.95 1.96 1.73.46 8.59.46 8.59.46s6.86 0 8.59-.46a2.77 2.77 0 0 0 1.95-1.96C23 15.6 23 12 23 12zM9.75 15.27V8.73L15.5 12l-5.75 3.27z"/></svg></a>
+            <a href="https://github.com/ahdis" aria-label="ahdis on GitHub" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.5 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg></a>
+            <a href="https://www.ahdis.ch/en/home" aria-label="ahdis website" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm6.9 6h-2.95a15.6 15.6 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.9 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14A8.06 8.06 0 0 1 4 12c0-.69.1-1.36.26-2h3.38a16.6 16.6 0 0 0 0 4H4.26zm.84 2h2.95c.33 1.27.8 2.47 1.38 3.56A7.99 7.99 0 0 1 5.1 16zm2.95-8H5.1a7.99 7.99 0 0 1 4.33-3.56A15.6 15.6 0 0 0 8.05 8zM12 19.96A13.9 13.9 0 0 1 10.09 16h3.82A13.9 13.9 0 0 1 12 19.96zM14.34 14H9.66a14.7 14.7 0 0 1 0-4h4.68a14.7 14.7 0 0 1 0 4zm.23 5.56c.58-1.09 1.05-2.29 1.38-3.56h2.95a7.99 7.99 0 0 1-4.33 3.56zM16.36 14a16.6 16.6 0 0 0 0-4h3.38c.17.64.26 1.31.26 2 0 .69-.1 1.36-.26 2h-3.38z"/></svg></a>
+          </nav>
+        </div>
+        <div class="block">
+          <p class="footer__copy">&copy; ahdis ag</p>
+        </div>
+      </div>
+      <nav class="footer__links" aria-label="Footer">
+        <ul>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Commercial Support</a></li>
+          <li><a href="https://www.ahdis.ch/en/home" target="_blank" rel="noopener">Get Help</a></li>
+          <li><a href="../../../blog/">Blog</a></li>
+          <li><a href="https://github.com/ahdis/matchbox" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+        <ul>
+          <li><a href="https://test.ahdis.ch/matchboxv3/" target="_blank" rel="noopener">Test Server</a></li>
+          <li><a href="https://ahdis.github.io/matchbox/" target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="https://www.ahdis.ch/en/contact" target="_blank" rel="noopener">Contact</a></li>
+          <li><a href="../../../privacy-policy/">Privacy Policy</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+
+  <div class="consent" role="region" aria-label="Cookie notice" hidden>
+    <p>We use Google Analytics to understand how this site is used. Analytics
+       cookies are only set if you agree. See our
+       <a href="../../../privacy-policy/">Privacy Policy</a>.</p>
+    <div class="consent__actions">
+      <button type="button" class="consent__accept">Accept</button>
+      <button type="button" class="consent__deny">Decline</button>
+    </div>
+  </div>
+<script src="../../../assets/js/site.js" defer></script>
+</body>
+</html>

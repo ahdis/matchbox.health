@@ -11,7 +11,376 @@
   <webfeeds:icon>https://www.matchbox.health/assets/img/feed-icon.png</webfeeds:icon>
   <webfeeds:cover image="https://www.matchbox.health/assets/img/social-card.png"/>
   <webfeeds:accentColor>3d5c73</webfeeds:accentColor>
-  <updated>2026-09-26T00:00:00Z</updated>
+  <updated>2026-10-19T00:00:00Z</updated>
+  <entry>
+    <title>Monitoring Matchbox with OpenTelemetry</title>
+    <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/2026/matchbox-opentelemetry/"/>
+    <id>https://www.matchbox.health/blog/2026/matchbox-opentelemetry/</id>
+    <published>2026-10-19T00:00:00Z</published>
+    <updated>2026-10-19T00:00:00Z</updated>
+    <author><name>Quentin Ligier</name></author>
+    <summary>Matchbox can export its metrics, traces and logs with OpenTelemetry. This tutorial turns the export on, sends the data to Traceway, and sets up a dashboard and alerts for a Matchbox server.</summary>
+    <content type="html">&lt;p&gt;If you run Matchbox as a shared FHIR validation service, sooner or later someone will ask how many resources you validate, why some &lt;code&gt;$validate&lt;/code&gt; calls are so slow, or whether the server is running out of memory.
+Recent Matchbox releases can answer these questions themselves by exporting metrics, traces and logs with OpenTelemetry.
+In this tutorial, you&#x27;ll turn that on, send the data to Traceway (a simple and standalone monitoring platform) and set up a dashboard and alerts for your Matchbox server.&lt;/p&gt;
+&lt;p&gt;You&#x27;ll need Docker with Docker Compose, and a shell with &lt;code&gt;curl&lt;/code&gt; and &lt;code&gt;openssl&lt;/code&gt;.
+You don&#x27;t need any prior experience with OpenTelemetry or Traceway.&lt;/p&gt;
+&lt;h2 id=&quot;what-matchbox-measures&quot;&gt;What Matchbox measures&lt;/h2&gt;
+&lt;p&gt;Matchbox produces three kinds of telemetry.
+&lt;strong&gt;Metrics&lt;/strong&gt; are numbers tracked over time, like the number of validations per minute.
+&lt;strong&gt;Traces&lt;/strong&gt; record a single request step by step: each step, such as a database query, is a &lt;em&gt;span&lt;/em&gt; with its own duration.
+&lt;strong&gt;Logs&lt;/strong&gt; are the messages Matchbox writes as it works, like the ones you see in its console.&lt;/p&gt;
+&lt;p&gt;Within &lt;strong&gt;metrics&lt;/strong&gt;, we distinguish three types of data:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Counters&lt;/strong&gt; are running totals that only ever go up, like the number of validations since Matchbox started. What you usually chart is how fast they grow, e.g. validations per second.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Timers&lt;/strong&gt; measure how long something takes, each time it happens. A timer also counts the events it measures, so &lt;code&gt;matchbox.validation.duration&lt;/code&gt; gives you both the number of validations and their total, average and maximum duration.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Gauges&lt;/strong&gt; hold a current value that can go up or down, like the heap memory in use or the number of cached engines. Matchbox reads the value each time it exports metrics.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Matchbox gets most of this from the OpenTelemetry Spring Boot starter, a library that adds OpenTelemetry to Spring Boot applications.
+On top of that, Matchbox adds a few metrics of its own.&lt;/p&gt;
+&lt;h3 id=&quot;spring-boot-metrics&quot;&gt;Spring Boot metrics&lt;/h3&gt;
+&lt;p&gt;Matchbox is a Spring Boot application, and Spring Boot already measures a lot about itself through Micrometer, its built-in metrics library.
+When &lt;code&gt;otel.instrumentation.micrometer.enabled=true&lt;/code&gt; is set, the starter forwards all of these metrics to OpenTelemetry under the same names.
+The most useful ones for a Matchbox server are:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;jvm.memory.used&lt;/code&gt; (gauge): memory in use, in bytes, per memory pool. The &lt;code&gt;area&lt;/code&gt; tag separates &lt;code&gt;heap&lt;/code&gt; from &lt;code&gt;nonheap&lt;/code&gt; memory, and &lt;code&gt;id&lt;/code&gt; names the pool. &lt;code&gt;jvm.memory.max&lt;/code&gt; gives the matching limits.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;jvm.memory.usage.after.gc&lt;/code&gt; (gauge): the share of long-lived heap memory still in use after the last garbage collection, from 0 to 1. This is the best single sign that Matchbox is running out of memory.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;jvm.gc.pause&lt;/code&gt; (timer): garbage-collection pauses. During a pause, the JVM stops all other threads, so requests have to wait.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;process.cpu.usage&lt;/code&gt; and &lt;code&gt;system.cpu.usage&lt;/code&gt; (gauges): the CPU used by Matchbox and by the whole host, from 0 to 1.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;jdbc.connections.active&lt;/code&gt;, &lt;code&gt;jdbc.connections.idle&lt;/code&gt; and &lt;code&gt;jdbc.connections.max&lt;/code&gt; (gauges): connections in the database connection pool. If &lt;code&gt;active&lt;/code&gt; stays at &lt;code&gt;max&lt;/code&gt;, requests are waiting for a free connection. In Matchbox, the pool is only reported under these names, not under HikariCP&#x27;s own &lt;code&gt;hikaricp.connections.*&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;http.server.requests&lt;/code&gt; (timer): incoming HTTP requests, tagged with method, status and &lt;code&gt;uri&lt;/code&gt;. HAPI FHIR serves the FHIR API through its own servlet instead of Spring MVC, so Spring can&#x27;t tell the FHIR endpoints apart: they all end up under &lt;code&gt;uri=UNKNOWN&lt;/code&gt;. Only Spring&#x27;s own endpoints, such as Actuator&#x27;s, get their real path.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;logback.events&lt;/code&gt; (counter): log events, tagged by &lt;code&gt;level&lt;/code&gt;. A sudden rise in &lt;code&gt;error&lt;/code&gt; events is often the first sign that something is wrong.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Spring Boot also reports thread counts, Tomcat sessions, free disk space and more.
+To see the complete list on your server, call &lt;code&gt;/matchboxv3/actuator/metrics&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;The starter also takes a few measurements of its own, named after OpenTelemetry&#x27;s conventions.
+These are exported as soon as OpenTelemetry is on, even without the Micrometer setting:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;http.server.request.duration&lt;/code&gt; (timer): incoming HTTP requests, tagged with method and status code. Like &lt;code&gt;http.server.requests&lt;/code&gt;, it counts the FHIR requests but doesn&#x27;t break them down by endpoint. For validation times, &lt;code&gt;matchbox.validation.duration&lt;/code&gt; is more precise.&lt;/li&gt;
+&lt;li&gt;JVM metrics such as &lt;code&gt;jvm.memory.used&lt;/code&gt;, &lt;code&gt;jvm.gc.duration&lt;/code&gt;, &lt;code&gt;jvm.thread.count&lt;/code&gt; and &lt;code&gt;jvm.cpu.time&lt;/code&gt;. They overlap with Micrometer&#x27;s JVM metrics, and two of them even share a name (&lt;code&gt;jvm.memory.used&lt;/code&gt; and &lt;code&gt;jvm.memory.committed&lt;/code&gt;), but with different tags: &lt;code&gt;jvm.memory.type&lt;/code&gt; and &lt;code&gt;jvm.memory.pool.name&lt;/code&gt; instead of &lt;code&gt;area&lt;/code&gt; and &lt;code&gt;id&lt;/code&gt;. A filter on &lt;code&gt;area&lt;/code&gt; only matches Micrometer&#x27;s version. If you don&#x27;t need both, turn off the starter&#x27;s version with &lt;code&gt;otel.instrumentation.runtime-telemetry.enabled=false&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&quot;matchboxs-own-metrics&quot;&gt;Matchbox&#x27;s own metrics&lt;/h3&gt;
+&lt;p&gt;The following metrics can be enabled by setting &lt;code&gt;otel.instrumentation.micrometer.enabled=true&lt;/code&gt; in your configuration.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;matchbox.validation.count&lt;/code&gt; (counter): number of FHIR resources validated, through either the FHIR &lt;code&gt;$validate&lt;/code&gt; operation or the Gazelle validation API (used by IHE&#x27;s Gazelle test tools).&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.validation.duration&lt;/code&gt; (timer): how long each validation took.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.transformation.count&lt;/code&gt; (counter): number of resources transformed with &lt;code&gt;StructureMap/$transform&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.engines.cached.permanent.number&lt;/code&gt; and &lt;code&gt;matchbox.engines.cached.transient.number&lt;/code&gt; (gauges): how many validation engines Matchbox holds in memory. An engine is a validator loaded with a particular set of ImplementationGuides (IGs). Matchbox caches engines so it doesn&#x27;t rebuild them for every request. Permanent engines stay cached; transient engines expire automatically after an hour.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.engines.creating.number&lt;/code&gt; (gauge): how many engines Matchbox is building right now.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.igs.number&lt;/code&gt; (gauge): number of installed IGs.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;matchbox.engines.fetch.cache.size&lt;/code&gt; (gauge, from Matchbox v5.0.0): the sum of all resources stored in the engines&#x27; fetch cache, that is configurable with &lt;code&gt;MatchboxEngine.setFetchCacheMaxSize(int)&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&quot;traces&quot;&gt;Traces&lt;/h3&gt;
+&lt;p&gt;The starter traces every incoming HTTP request, along with the database queries Matchbox runs while handling it.
+Each request becomes one span, with attributes such as the URL path (&lt;code&gt;url.path&lt;/code&gt;), the query parameters (&lt;code&gt;url.query&lt;/code&gt;, e.g. the &lt;code&gt;profile&lt;/code&gt; to validate against) and the HTTP status.
+HAPI FHIR does its own routing instead of Spring MVC, so these spans carry the concrete URL path but no route template.
+In Traceway, that means one endpoint per path: one for &lt;code&gt;POST /matchboxv3/fhir/Patient/$validate&lt;/code&gt;, another for &lt;code&gt;POST /matchboxv3/fhir/Observation/$validate&lt;/code&gt;, and so on.&lt;/p&gt;
+&lt;p&gt;Calls to the terminology server and package downloads aren&#x27;t traced, because the validator makes them with HTTP clients that the starter doesn&#x27;t instrument.
+Their time counts toward the request&#x27;s duration, but you can&#x27;t see it separately.
+Matchbox doesn&#x27;t add spans of its own yet either, so a trace tells you &lt;em&gt;which&lt;/em&gt; validations are slow, not &lt;em&gt;why&lt;/em&gt;.&lt;/p&gt;
+&lt;p&gt;Database queries that run outside a request, at startup or in HAPI FHIR&#x27;s background jobs, are exported too, but Traceway drops them because they don&#x27;t belong to any endpoint.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-opentelemetry/trace.png&quot; alt=&quot;Screenshot of a trace&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;h3 id=&quot;logs&quot;&gt;Logs&lt;/h3&gt;
+&lt;p&gt;Matchbox also sends its logs.
+The starter hooks into Logback, the logging library Matchbox uses, and exports every log event as soon as OpenTelemetry is on, with no further setting.
+Matchbox still writes the same lines to its console, so &lt;code&gt;docker compose logs&lt;/code&gt; keeps working.&lt;/p&gt;
+&lt;p&gt;Each record carries its level, its message and the name of the logger that wrote it, e.g. &lt;code&gt;ch.ahdis.matchbox.engine.MatchboxEngine&lt;/code&gt;.
+Only what Logback lets through is exported: INFO and above by default.
+The levels you set under &lt;code&gt;logging.level&lt;/code&gt; apply to the console and the export alike.
+Expect a burst of a couple of hundred records at startup.&lt;/p&gt;
+&lt;p&gt;Logs written while Matchbox handles a request carry that request&#x27;s trace ID, which ties them to the request.
+For a &lt;code&gt;$validate&lt;/code&gt; request, these are lines such as &amp;quot;Using profile for validation …&amp;quot; and &amp;quot;finished validation …&amp;quot;, plus any error, for example when the requested IG isn&#x27;t installed.
+They also tell you whether Matchbox reused a cached engine (&amp;quot;Using cached validate engine for …&amp;quot;) or had to build one (&amp;quot;Creating new validate engine for …&amp;quot;), which the trace alone can&#x27;t show.
+In Traceway, these lines appear in the &lt;strong&gt;Logs&lt;/strong&gt; card of the endpoint&#x27;s detail page, under &lt;strong&gt;This Trace&lt;/strong&gt;.
+All logs, whether they&#x27;re part of a trace or not, including the startup ones, are on the project&#x27;s &lt;strong&gt;Logs&lt;/strong&gt; page.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-opentelemetry/logs.png&quot; alt=&quot;Screenshot of the logs generated during a validation&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;h3 id=&quot;gen-ai-metrics-optional&quot;&gt;Gen-AI metrics (optional)&lt;/h3&gt;
+&lt;p&gt;Matchbox can ask an LLM to analyze failed validations (&amp;quot;AI-assisted validation&amp;quot;).
+If you use that feature, Matchbox also records how many tokens each LLM call used (&lt;code&gt;gen_ai.client.token.usage&lt;/code&gt;) and how long it took (&lt;code&gt;gen_ai.client.operation.duration&lt;/code&gt;), broken down by provider, model, and input vs. output tokens.
+To set up AI-assisted validation, see the &lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/docs/validation-with-ai-tutorial.md&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Validation with AI tutorial&lt;/a&gt;.&lt;/p&gt;
+&lt;h2 id=&quot;where-the-data-goes&quot;&gt;Where the data goes&lt;/h2&gt;
+&lt;p&gt;&lt;a href=&quot;https://opentelemetry.io/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;OpenTelemetry&lt;/a&gt; (OTel) is an open standard for collecting metrics, traces and logs, and most monitoring tools support it.
+Matchbox sends its data over OTLP, OpenTelemetry&#x27;s network protocol.&lt;/p&gt;
+&lt;p&gt;In this tutorial, that data goes to &lt;a href=&quot;https://tracewayapp.com&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Traceway&lt;/a&gt;, an MIT-licensed observability platform.
+We picked it because its configuration is minimal, and deployment is easy: Traceway is a single container image; it receives OTLP directly, stores everything in SQLite, DuckDB or PostgreSQL, and has dashboards and alerting built in.
+This makes it a good solution for experimentation with telemetry.
+The usual self-hosted stack is an OpenTelemetry Collector plus one store per kind of data, such as Prometheus for metrics, Jaeger or Tempo for traces and Loki for logs, with Grafana on top for dashboards and alerts.
+That&#x27;s several services to set up and wire together, but once that is done, they are much more powerful.&lt;/p&gt;
+&lt;p&gt;Nothing on the Matchbox side depends on Traceway, though.
+Matchbox only speaks standard OpenTelemetry, so this setup works the same with any backend that accepts OTLP, whether that&#x27;s your own Grafana stack or a hosted service such as Grafana Cloud, Honeycomb or Dynatrace.
+To switch, you change the endpoint and the credentials.
+Matchbox sends the same metrics, traces and logs either way, although some backends adapt the names to their own conventions: Prometheus, for example, replaces the dots with underscores by default.
+What does differ from tool to tool is how you build dashboards and alerts, so treat the Traceway screens in Steps 4 and 5 as a guide to what to watch, not as exact instructions.&lt;/p&gt;
+&lt;h2 id=&quot;step-1-start-traceway-and-create-a-project&quot;&gt;Step 1: Start Traceway and create a project&lt;/h2&gt;
+&lt;p&gt;Matchbox needs a Traceway project token before it can send anything, so start Traceway first.&lt;/p&gt;
+&lt;p&gt;In an empty directory, create a &lt;code&gt;docker-compose.yml&lt;/code&gt; file:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;yaml&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nt&quot;&gt;services&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;traceway&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;image&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;ghcr.io/tracewayapp/traceway:sqlite&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;ports&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;80:80&quot;&lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;volumes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;./traceway-data:/data&quot;&lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;environment&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;JWT_SECRET&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;${JWT_SECRET}&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;c1&quot;&gt;# The default cache is sized for machines with 16 GB+&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;SQLITE_CACHE_SIZE_MB&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;64&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;This is Traceway&#x27;s single-container image, which stores everything in SQLite under &lt;code&gt;./traceway-data&lt;/code&gt;.
+&lt;code&gt;JWT_SECRET&lt;/code&gt; signs Traceway&#x27;s login sessions and must be at least 32 characters long.
+Generate one into a &lt;code&gt;.env&lt;/code&gt; file, which Docker Compose reads automatically, and start Traceway:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;JWT_SECRET=&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;$(&lt;/span&gt;openssl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;rand&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-hex&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;m&quot;&gt;32&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&amp;gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;.env
+docker&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;compose&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;up&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;traceway
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Then set up Traceway in your browser:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Open &lt;code&gt;http://localhost/register&lt;/code&gt; and create an account. The first account becomes the owner of the organization.&lt;/li&gt;
+&lt;li&gt;In the header, open the project selector and select &lt;strong&gt;Add Project&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;Name the project &lt;code&gt;Matchbox&lt;/code&gt;, choose the &lt;strong&gt;OpenTelemetry&lt;/strong&gt; framework, and select &lt;strong&gt;New Project&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;Traceway shows the project&#x27;s token. Add it to your &lt;code&gt;.env&lt;/code&gt; file:&lt;/li&gt;
+&lt;/ol&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;TRACEWAY_TOKEN=&amp;lt;your project token&amp;gt;&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&amp;gt;&amp;gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;.env
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;If you lose the token, you can find it again on the project&#x27;s &lt;strong&gt;Connection&lt;/strong&gt; page.&lt;/p&gt;
+&lt;h2 id=&quot;step-2-enable-telemetry-in-matchbox&quot;&gt;Step 2: Enable telemetry in Matchbox&lt;/h2&gt;
+&lt;p&gt;Telemetry is &lt;strong&gt;off by default&lt;/strong&gt;.
+The stock &lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/matchbox-server/src/main/resources/application.yaml&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;&lt;code&gt;application.yaml&lt;/code&gt;&lt;/a&gt; contains:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;yaml&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nt&quot;&gt;otel&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;sdk&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;disabled&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;true&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;On top of that, Matchbox only registers its own metrics when &lt;code&gt;otel.instrumentation.micrometer.enabled&lt;/code&gt; is &lt;code&gt;true&lt;/code&gt;.
+So nothing gets exported until you opt in.&lt;/p&gt;
+&lt;p&gt;Add Matchbox to your &lt;code&gt;docker-compose.yml&lt;/code&gt;, under &lt;code&gt;services&lt;/code&gt;:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;yaml&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;matchbox&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;image&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:latest&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;ports&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;8080:8080&quot;&lt;/span&gt;&lt;span class=&quot;p p-Indicator&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;environment&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_SDK_DISABLED&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;false&quot;&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_SERVICE_NAME&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;matchbox&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;http://traceway/api/otel&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_EXPORTER_OTLP_HEADERS&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Authorization=Bearer&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;${TRACEWAY_TOKEN}&quot;&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_INSTRUMENTATION_MICROMETER_ENABLED&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;true&quot;&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;OTEL_METRIC_EXPORT_INTERVAL&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;15000&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Here&#x27;s what each setting does:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;OTEL_SDK_DISABLED=false&lt;/code&gt; turns on OpenTelemetry. From then on, Matchbox exports traces and logs, with no further setting.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;OTEL_SERVICE_NAME&lt;/code&gt; is the name Traceway shows for this server.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;OTEL_EXPORTER_OTLP_ENDPOINT&lt;/code&gt; points at Traceway. It must end in &lt;code&gt;/api/otel&lt;/code&gt;: without &lt;code&gt;/api&lt;/code&gt;, Traceway&#x27;s web interface answers instead, and the data silently disappears.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;OTEL_EXPORTER_OTLP_HEADERS&lt;/code&gt; sends the project token, so Traceway knows which project the data belongs to.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;OTEL_INSTRUMENTATION_MICROMETER_ENABLED=true&lt;/code&gt; forwards Spring Boot&#x27;s metrics and turns on the Matchbox-specific ones.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;OTEL_METRIC_EXPORT_INTERVAL=15000&lt;/code&gt; sends metrics every 15 seconds instead of every 60, so you see data sooner.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Start Matchbox:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;docker&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;compose&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;up&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;matchbox
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;If no data shows up in Traceway a minute after Matchbox has started, check &lt;code&gt;docker compose logs matchbox&lt;/code&gt; for export errors.
+A &lt;code&gt;401&lt;/code&gt; means the token is missing or wrong.&lt;/p&gt;
+&lt;p&gt;Outside of this tutorial, you&#x27;ll probably keep these settings in an override file instead.
+Spring Boot merges it over the defaults; with Docker, mount it at &lt;code&gt;/config/application.yaml&lt;/code&gt;.
+Each environment variable above maps to a key in that file:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;yaml&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nt&quot;&gt;otel&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;sdk&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;disabled&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;false&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;service&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;matchbox&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;exporter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;otlp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;endpoint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;https://traceway.example.com/api/otel&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;headers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;        &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;Authorization&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;Bearer &amp;lt;your project token&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;instrumentation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;micrometer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;enabled&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;true&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;metric&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;export&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;interval&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;l l-Scalar l-Scalar-Plain&quot;&gt;15000&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;c1&quot;&gt;# milliseconds&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;A few notes:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Metrics only.&lt;/strong&gt; Traces and logs are exported as soon as OpenTelemetry is on. To turn them off, add &lt;code&gt;OTEL_TRACES_EXPORTER=none&lt;/code&gt; and &lt;code&gt;OTEL_LOGS_EXPORTER=none&lt;/code&gt; (&lt;code&gt;otel.traces.exporter: none&lt;/code&gt; and &lt;code&gt;otel.logs.exporter: none&lt;/code&gt; in the file).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Sampling.&lt;/strong&gt; By default, Matchbox sends every trace. On a busy server, you can keep only a share of them by adding &lt;code&gt;OTEL_TRACES_SAMPLER=parentbased_traceidratio&lt;/code&gt; and &lt;code&gt;OTEL_TRACES_SAMPLER_ARG=0.1&lt;/code&gt; (keeps 10 %). Keep in mind that Traceway computes endpoint latency and error rates from the traces it receives, so with sampling, those numbers are based on a subset of requests.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Actuator works without OpenTelemetry.&lt;/strong&gt; Spring Boot Actuator, Spring Boot&#x27;s built-in management endpoints, serves &lt;code&gt;/matchboxv3/actuator/metrics&lt;/code&gt; even with &lt;code&gt;otel.sdk.disabled=true&lt;/code&gt;. That&#x27;s handy for a quick check. The settings above add the export to Traceway and the Matchbox-specific metrics.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Context path.&lt;/strong&gt; All Actuator endpoints live under the Matchbox context path, e.g. &lt;code&gt;http://localhost:8080/matchboxv3/actuator/health&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&quot;step-3-generate-some-load&quot;&gt;Step 3: Generate some load&lt;/h2&gt;
+&lt;p&gt;Matchbox needs an ImplementationGuide to validate against.
+These examples use &lt;code&gt;hl7.fhir.r4.core&lt;/code&gt;, which is always installed.&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;MB&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;http://localhost:8080/matchboxv3
+&lt;span class=&quot;nv&quot;&gt;PROFILE&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;http://hl7.org/fhir/StructureDefinition/Patient
+
+&lt;span class=&quot;c1&quot;&gt;# A valid Patient&lt;/span&gt;
+curl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-s&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-X&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;POST&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$MB&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;/fhir/Patient/\$validate?profile=&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$PROFILE&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;-H&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;Content-Type: application/fhir+json&#x27;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;{&quot;resourceType&quot;:&quot;Patient&quot;,&quot;name&quot;:[{&quot;family&quot;:&quot;Test&quot;}],&quot;gender&quot;:&quot;other&quot;}&#x27;&lt;/span&gt;
+
+&lt;span class=&quot;c1&quot;&gt;# An invalid one — wrong data type for name&lt;/span&gt;
+curl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-s&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-X&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;POST&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$MB&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;/fhir/Patient/\$validate&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;-H&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;Content-Type: application/fhir+json&#x27;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;{&quot;resourceType&quot;:&quot;Patient&quot;,&quot;name&quot;:&quot;Test&quot;}&#x27;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;The backslash in &lt;code&gt;\$validate&lt;/code&gt; stops the shell from treating &lt;code&gt;$validate&lt;/code&gt; as a variable.&lt;/p&gt;
+&lt;p&gt;Two requests won&#x27;t make an interesting graph, so send a couple of hundred more:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;for&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;i&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;k&quot;&gt;in&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;k&quot;&gt;$(&lt;/span&gt;seq&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;m&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;m&quot;&gt;200&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;)&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;k&quot;&gt;do&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;curl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-s&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-o&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;/dev/null&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-X&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;POST&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$MB&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;/fhir/Patient/\$validate&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;-H&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;Content-Type: application/fhir+json&#x27;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&#x27;{&quot;resourceType&quot;:&quot;Patient&quot;,&quot;name&quot;:&quot;Test&quot;}&#x27;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;done&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;For a heavier, sustained load, the Matchbox repository also includes a JMeter test plan in its &lt;code&gt;jmeter/&lt;/code&gt; directory.&lt;/p&gt;
+&lt;h2 id=&quot;step-4-read-the-results&quot;&gt;Step 4: Read the results&lt;/h2&gt;
+&lt;h3 id=&quot;4a-actuator-for-a-quick-look&quot;&gt;4a. Actuator, for a quick look&lt;/h3&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;curl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-s&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$MB&lt;/span&gt;/actuator/metrics/matchbox.validation.duration
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;json&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;name&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;matchbox.validation.duration&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;description&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Duration of FHIR resource validation by Matchbox&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;baseUnit&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;seconds&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;measurements&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;statistic&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;COUNT&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;value&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;28&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;statistic&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;TOTAL_TIME&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;value&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mf&quot;&gt;34.953&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;statistic&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;MAX&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;value&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mf&quot;&gt;20.833&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;So far, Matchbox has run 28 validations, taking 35 seconds in total, and the slowest one took almost 21 seconds.&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;curl&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-s&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;$MB&lt;/span&gt;/actuator/metrics/matchbox.engines.cached.permanent.number
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;json&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;name&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;matchbox.engines.cached.permanent.number&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;description&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Number of cached immutable Matchbox engines in the server&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;baseUnit&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;engines&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;measurements&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;statistic&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;VALUE&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;value&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;That confirms Matchbox is recording metrics.
+Now switch to Traceway at &lt;code&gt;http://localhost&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id=&quot;4b-latency-and-errors-the-endpoints-page&quot;&gt;4b. Latency and errors: the Endpoints page&lt;/h3&gt;
+&lt;p&gt;Traceway turns incoming HTTP requests into &lt;em&gt;endpoints&lt;/em&gt;, named after their method and route, and shows latency percentiles, throughput and error rate for each one.
+Endpoints are ranked by an impact score that combines latency, errors and volume, so the ones that hurt the most come first.&lt;/p&gt;
+&lt;p&gt;Open &lt;strong&gt;Endpoints&lt;/strong&gt; in the Matchbox project and find the &lt;code&gt;$validate&lt;/code&gt; endpoints, one per resource type, such as &lt;code&gt;POST /matchboxv3/fhir/Patient/$validate&lt;/code&gt;.
+This is where you get validation percentiles.
+The p95, for example, is the time within which 95 % of validations finish.
+Traceway computes percentiles from traces, not from metrics, which is why the dashboard below only shows average durations.&lt;/p&gt;
+&lt;h3 id=&quot;4c-traces-one-request-in-detail&quot;&gt;4c. Traces: one request in detail&lt;/h3&gt;
+&lt;p&gt;Click one of the &lt;code&gt;$validate&lt;/code&gt; endpoints to open its detail page.
+The &lt;strong&gt;Spans&lt;/strong&gt; waterfall shows a single request step by step: the top line is the whole request, and the indented lines are the database queries Matchbox ran while handling it, labelled with their SQL.&lt;/p&gt;
+&lt;p&gt;For most validations, the waterfall is a single line:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;pre&gt;&lt;code&gt;POST /matchboxv3/fhir/Observation/$validate   296 ms
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Matchbox found everything it needed in a cached engine, so it didn&#x27;t query the database.
+When a validation has to look something up in the package database, for instance to find the IG that defines the requested profile, the queries appear underneath:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;pre&gt;&lt;code&gt;POST /matchboxv3/fhir/Patient/$validate                       9.4 ms
+├─ select npvre1_0.pid, … from npm_package_ver_res … join …   0.1 ms
+└─ select npvre1_0.pid, … from npm_package_ver_res … join …   0.1 ms
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;In the first example, most of the 296 ms went to checking a LOINC code on tx.fhir.org, but nothing in the trace says so: the terminology call is hidden inside the request&#x27;s duration.
+Validating the same resource a second time took 18 ms, because Matchbox caches terminology results.&lt;/p&gt;
+&lt;p&gt;So use traces to find the slow requests, and their &lt;code&gt;url.query&lt;/code&gt; attribute to see which profile they were validated against.
+If the same validation is slow the first time and fast afterwards, Matchbox was either building a validation engine or waiting for the terminology server, and caches both.
+The &lt;strong&gt;Logs&lt;/strong&gt; card below the waterfall tells you which: it shows whether the request created a new engine.&lt;/p&gt;
+&lt;h3 id=&quot;4d-a-matchbox-dashboard&quot;&gt;4d. A Matchbox dashboard&lt;/h3&gt;
+&lt;p&gt;Traceway shows metrics in dashboards made of widgets.
+You configure each widget in the interface by picking a metric, an aggregation such as &lt;code&gt;avg&lt;/code&gt; or &lt;code&gt;last&lt;/code&gt;, and optional tag filters or a group-by.&lt;/p&gt;
+&lt;p&gt;Three things to know about how Matchbox&#x27;s metrics look in Traceway:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Names keep their dots, e.g. &lt;code&gt;matchbox.validation.count&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Counters arrive as running totals. Use the &lt;code&gt;rate&lt;/code&gt; aggregation to turn them into &amp;quot;per second&amp;quot;.&lt;/li&gt;
+&lt;li&gt;Timers arrive as histograms, which Traceway reduces to &lt;code&gt;&amp;lt;name&amp;gt;.avg&lt;/code&gt; (average duration) and &lt;code&gt;&amp;lt;name&amp;gt;.count&lt;/code&gt; (number of measurements). Traceway doesn&#x27;t keep the histogram buckets, so for percentiles, use the Endpoints page.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Open the dashboard picker (⌘K, or Ctrl K on Windows and Linux), create a dashboard for the Matchbox project, and add these widgets:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Traffic&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Validations per second: line chart of &lt;code&gt;matchbox.validation.count&lt;/code&gt;, aggregation &lt;code&gt;rate&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Transformations per second: line chart of &lt;code&gt;matchbox.transformation.count&lt;/code&gt;, aggregation &lt;code&gt;rate&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Latency&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Average validation time: line chart of &lt;code&gt;matchbox.validation.duration.avg&lt;/code&gt;, aggregation &lt;code&gt;avg&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Capacity&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Heap used: stacked area of &lt;code&gt;jvm.memory.used&lt;/code&gt;, filtered on &lt;code&gt;area&lt;/code&gt; = &lt;code&gt;heap&lt;/code&gt;, grouped by &lt;code&gt;id&lt;/code&gt; (one band per memory pool).&lt;/li&gt;
+&lt;li&gt;GC pauses: line chart of &lt;code&gt;jvm.gc.pause.avg&lt;/code&gt;, aggregation &lt;code&gt;avg&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Database connections in use: line chart of &lt;code&gt;jdbc.connections.active&lt;/code&gt;, aggregation &lt;code&gt;last&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Matchbox internals&lt;/strong&gt;
+&lt;ul&gt;
+&lt;li&gt;Cached engines: stacked area of &lt;code&gt;matchbox.engines.cached.permanent.number&lt;/code&gt; and &lt;code&gt;matchbox.engines.cached.transient.number&lt;/code&gt;, aggregation &lt;code&gt;last&lt;/code&gt;. This one needs JSON, see below.&lt;/li&gt;
+&lt;li&gt;Installed IGs: single value of &lt;code&gt;matchbox.igs.number&lt;/code&gt;, aggregation &lt;code&gt;last&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The widget editor only lets you pick one metric per widget.
+A widget can hold several sources, though, and a stacked area piles them on top of each other.
+To add the cached-engines widget, open the dashboard tab&#x27;s menu, select &lt;strong&gt;Edit as JSON&lt;/strong&gt;, and add this entry to the &lt;code&gt;widgets&lt;/code&gt; array:&lt;/p&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;json&lt;/span&gt;&lt;pre&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;title&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Cached engines&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;widgetType&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;stacked_area&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;config&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;sources&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;metric&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;name&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;matchbox.engines.cached.permanent.number&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;aggregation&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;last&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;label&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Permanent&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;      &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;type&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;metric&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;name&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;matchbox.engines.cached.transient.number&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;aggregation&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;last&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&quot;label&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;Transient&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;w&quot;&gt;  &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;p&gt;Traceway generates the widget&#x27;s &lt;code&gt;id&lt;/code&gt; when you save.
+The &lt;code&gt;label&lt;/code&gt; fields name the two bands.&lt;/p&gt;
+&lt;p&gt;Here&#x27;s the result of such a dashboard.
+Traceway&#x27;s dashboards are simpler than Grafana&#x27;s.
+The rate aggregation, for instance, is always per second, which is too fine for events as rare as validations.
+Still, the dashboard gives a good overview of the Matchbox server.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-opentelemetry/dashboard.png&quot; alt=&quot;Screenshot of a Traceway dashboard with the previous widgets added&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;h3 id=&quot;4e-gen-ai-usage&quot;&gt;4e. Gen-AI usage&lt;/h3&gt;
+&lt;p&gt;If AI-assisted validation is enabled, each failed &lt;code&gt;$validate&lt;/code&gt; that triggers an LLM analysis also records token usage.
+The token metric is a histogram too, so Traceway shows it as two metrics:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;gen_ai.client.token.usage.avg&lt;/code&gt;: average tokens per LLM call. Group by &lt;code&gt;gen_ai.token.type&lt;/code&gt; to split input and output tokens.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;gen_ai.client.token.usage.count&lt;/code&gt;: number of LLM calls. Use &lt;code&gt;rate&lt;/code&gt; for calls per second.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Average tokens per call times the number of calls, times your provider&#x27;s per-token price, gives you an estimate of what AI-assisted validation costs you.
+For LLM latency, chart &lt;code&gt;gen_ai.client.operation.duration.avg&lt;/code&gt;.&lt;/p&gt;
+&lt;h2 id=&quot;step-5-alerts-worth-having&quot;&gt;Step 5: Alerts worth having&lt;/h2&gt;
+&lt;p&gt;In Traceway, you create alert rules in the interface, under &lt;strong&gt;Alerts&lt;/strong&gt;.
+Each rule sends its notifications to one channel, such as email, Slack or a webhook, so set up a channel first.
+These three rules cover the basics; adjust the thresholds to your traffic:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Server errors.&lt;/strong&gt; Type &lt;em&gt;Error Rate&lt;/em&gt;, with a threshold of 5 %. This counts server errors (HTTP 5xx) on all endpoints.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Heap pressure.&lt;/strong&gt; Type &lt;em&gt;Metric Threshold&lt;/em&gt;, on &lt;code&gt;jvm.memory.usage.after.gc&lt;/code&gt;, with aggregation &lt;code&gt;max&lt;/code&gt;, operator &lt;code&gt;gt&lt;/code&gt;, threshold &lt;code&gt;0.9&lt;/code&gt; and a lookback of 15 minutes. This metric is the share of long-lived heap memory still in use after garbage collection, from 0 to 1, so it fires when the JVM is close to running out of memory.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Matchbox has gone quiet.&lt;/strong&gt; Type &lt;em&gt;No Data&lt;/em&gt;, data type &lt;code&gt;endpoints&lt;/code&gt;, with 30 silence minutes. It fires when Traceway hasn&#x27;t seen a single request from Matchbox for 30 minutes, which usually means the service is down or unreachable.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Keep an eye on the engine-cache gauges too, either on the dashboard or with a &lt;em&gt;Metric Threshold&lt;/em&gt; rule.
+If &lt;code&gt;matchbox.engines.cached.transient.number&lt;/code&gt; keeps climbing while heap usage rises, Matchbox is creating session engines faster than they expire.
+In that case, look at the cache expiry time and the &lt;code&gt;onlyOneEngine&lt;/code&gt; setting.&lt;/p&gt;
+&lt;h2 id=&quot;wrap-up&quot;&gt;Wrap-up&lt;/h2&gt;
+&lt;p&gt;Matchbox&#x27;s telemetry stays quiet until you ask for it.
+Two settings turn it on:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;otel.sdk.disabled=false&lt;/code&gt; starts OpenTelemetry and the export, traces and logs included.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;otel.instrumentation.micrometer.enabled=true&lt;/code&gt; forwards metrics and enables the Matchbox-specific ones.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;If you only want metrics, &lt;code&gt;otel.traces.exporter=none&lt;/code&gt; and &lt;code&gt;otel.logs.exporter=none&lt;/code&gt; turn traces and logs off.&lt;/p&gt;
+&lt;p&gt;To send everything to Traceway, point the exporter at Traceway&#x27;s &lt;code&gt;/api/otel&lt;/code&gt; endpoint and pass your project token in the &lt;code&gt;Authorization&lt;/code&gt; header.
+The rest is standard OpenTelemetry, so moving to another backend later only means changing those two settings.&lt;/p&gt;
+&lt;p&gt;With that in place, the questions from the start of this post become dashboard widgets and alerts: how much you validate and transform and how fast, how the engine cache behaves, how much memory headroom is left, which requests are slow, and how many LLM tokens AI validation uses.&lt;/p&gt;
+&lt;h2 id=&quot;references&quot;&gt;References&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https://github.com/ahdis/matchbox&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Matchbox on GitHub&lt;/a&gt;: see &lt;code&gt;MatchboxMetricsConfig&lt;/code&gt;, &lt;code&gt;MatchboxMetrics&lt;/code&gt; and &lt;code&gt;application.yaml&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/docs/docker.md&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Running Matchbox in Docker&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/docs/validation-with-ai-tutorial.md&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Tutorial: Validation with AI&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Traceway: &lt;a href=&quot;https://docs.tracewayapp.com/client/otel&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;sending OpenTelemetry data&lt;/a&gt;, &lt;a href=&quot;https://docs.tracewayapp.com/server/sqlite&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;the SQLite container&lt;/a&gt;, &lt;a href=&quot;https://docs.tracewayapp.com/learn/dashboards&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;dashboards&lt;/a&gt; and &lt;a href=&quot;https://docs.tracewayapp.com/learn/alerts&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;alerts&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://opentelemetry.io/docs/zero-code/java/spring-boot-starter/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;OpenTelemetry Spring Boot starter&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://opentelemetry.io/docs/languages/java/configuration/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;OpenTelemetry SDK configuration (env vars)&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&quot;https://docs.spring.io/spring-boot/reference/actuator/metrics.html&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Spring Boot Actuator metrics&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</content>
+    <media:content url="https://www.matchbox.health/assets/img/social-card.png" medium="image" type="image/png" width="1200" height="630"/>
+    <media:thumbnail url="https://www.matchbox.health/assets/img/social-card.png" width="1200" height="630"/>
+  </entry>
   <entry>
     <title>Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup</title>
     <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/2026/matchbox-memory/"/>
