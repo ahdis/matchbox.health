@@ -345,7 +345,7 @@ body.is-menu-open .header { background: transparent; }
 :root {
   --rule: #dbe4ea;     /* hairlines on white */
   --tint: #eef3f6;     /* inline code ground */
-  --code: #2b4252;     /* code block ground, a step darker than --dark */
+  --code: #f4f7f9;     /* code block ground, light so it does not outweigh the text */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .column { max-width: 46rem; margin-left: auto; margin-right: auto; }
@@ -430,24 +430,27 @@ body.is-menu-open .header { background: transparent; }
 .article td:first-child { color: var(--dark); font-weight: 500; }
 
 /* code blocks; the token colours are Pygments' short classes */
-.article .code { background: var(--code); color: #e6edf2; border-radius: 6.4px; overflow: hidden; }
+.article .code {
+  background: var(--code); color: var(--dark); border: 1px solid var(--rule);
+  border-left: 4px solid var(--mint); border-radius: 6.4px; overflow: hidden;
+}
 .code__lang {
-  display: block; padding: 0.5em 1.25em; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mint);
+  display: block; padding: 0.5em 1.25em; border-bottom: 1px solid var(--rule);
+  font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--slate);
 }
 .article .code pre { margin: 0; padding: 1em 1.25em; overflow-x: auto; }
 .article .code code {
   background: none; padding: 0; border-radius: 0; color: inherit;
   font-size: 0.82em; line-height: 1.6; overflow-wrap: normal;
 }
-.code .c, .code .c1, .code .cm, .code .ch, .code .cs, .code .cp { color: #9fb4c3; font-style: italic; }
-.code .k, .code .kc, .code .kd, .code .kn, .code .kr, .code .kt, .code .ow, .code .gp { color: var(--mint); }
+.code .c, .code .c1, .code .cm, .code .ch, .code .cs, .code .cp { color: #5a6f7f; font-style: italic; }
+.code .k, .code .kc, .code .kd, .code .kn, .code .kr, .code .kt, .code .ow, .code .gp { color: #2e7a64; }
 .code .s, .code .s1, .code .s2, .code .sb, .code .sc, .code .sd, .code .se,
-.code .sh, .code .si, .code .sx, .code .sr, .code .ss { color: #f5d48f; }
-.code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .il { color: #f4a99b; }
-.code .nt, .code .na, .code .nf, .code .nb, .code .nc { color: #8fd0dc; }
-.code .nv, .code .vg, .code .vi, .code .vc { color: #c9b8f0; }
-.code .o, .code .p { color: #c5d3dd; }
+.code .sh, .code .si, .code .sx, .code .sr, .code .ss { color: #8a5a00; }
+.code .m, .code .mi, .code .mf, .code .mh, .code .mo, .code .il { color: #b0453a; }
+.code .nt, .code .na, .code .nf, .code .nb, .code .nc { color: #28707f; }
+.code .nv, .code .vg, .code .vi, .code .vc { color: #6a4fb0; }
+.code .o, .code .p { color: #4a6577; }
 
 .article .footnotes { margin-top: 3em; font-size: 0.88em; }
 .article .footnotes-sep { border: 0; border-top: 1px solid var(--rule); margin: 3em 0 1em; }
