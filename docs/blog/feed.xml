@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"
+      xmlns:webfeeds="http://webfeeds.org/rss/1.0">
   <title>matchbox.health blog</title>
+  <subtitle>Latest news, updates and insights on HL7® FHIR® validation and mapping with Matchbox.</subtitle>
   <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/"/>
   <link rel="self" type="application/atom+xml" href="https://www.matchbox.health/blog/feed.xml"/>
   <id>https://www.matchbox.health/blog/</id>
+  <icon>https://www.matchbox.health/assets/img/feed-icon.png</icon>
+  <logo>https://www.matchbox.health/assets/img/social-card.png</logo>
+  <webfeeds:icon>https://www.matchbox.health/assets/img/feed-icon.png</webfeeds:icon>
+  <webfeeds:cover image="https://www.matchbox.health/assets/img/social-card.png"/>
+  <webfeeds:accentColor>3d5c73</webfeeds:accentColor>
   <updated>2026-09-26T00:00:00Z</updated>
   <entry>
     <title>Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup</title>
@@ -164,5 +171,7 @@
 &lt;p&gt;In one day we delivered a Matchbox release that needs a fraction of the memory. But it needs the community to raise awareness and bring urgency to the problems, so thanks again to Achraf (&lt;a href=&quot;https://github.com/achrafachkari&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@achrafachkari&lt;/a&gt;), Valentin (&lt;a href=&quot;https://github.com/reva&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@reva&lt;/a&gt;) and especially my colleague Quentin (&lt;a href=&quot;https://github.com/qligier&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@qligier&lt;/a&gt;), co-maintainer of Matchbox, who has to review all my pull requests co-authored with Claude Code.&lt;/p&gt;
 &lt;p&gt;Disclaimer: As with the code, I used Claude to help me with this blog article, but I read and refined every sentence.&lt;/p&gt;
 </content>
+    <media:content url="https://www.matchbox.health/assets/img/social-card.png" medium="image" type="image/png" width="1200" height="630"/>
+    <media:thumbnail url="https://www.matchbox.health/assets/img/social-card.png" width="1200" height="630"/>
   </entry>
 </feed>
