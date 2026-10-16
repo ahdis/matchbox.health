@@ -21,7 +21,7 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import get_lexer_by_name
 from pygments.util import ClassNotFound
 
-from layout import SITE
+from layout import CARD, ICON, SITE
 
 POSTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'posts')
 NAME = re.compile(r'(\d{4}-\d{2}-\d{2})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$')
@@ -210,7 +210,12 @@ def index_body(posts):
 
 def feed(posts, rendered):
     """Atom feed with the full text. Links are made absolute, since feed
-    readers resolve them against the feed, not the post."""
+    readers resolve them against the feed, not the post.
+
+    The images are PNG (made by _design/tools/feed-images.mjs): the feed's
+    icon and logo, Feedly's webfeeds extension, and a media:content image per
+    entry. Without an entry image, Feedly takes the largest image of the post
+    page, the white ahdis logo in the footer, and shows it on black."""
     def absolute(s):
         return re.sub(r'(href|src)="/', rf'\1="{SITE}/', s)
 
@@ -226,13 +231,22 @@ def feed(posts, rendered):
     <author><name>{html.escape(p['author'])}</name></author>
     <summary>{html.escape(p['summary'])}</summary>
     <content type="html">{html.escape(absolute(rendered[p['slug']]))}</content>
+    <media:content url="{CARD}" medium="image" type="image/png" width="1200" height="630"/>
+    <media:thumbnail url="{CARD}" width="1200" height="630"/>
   </entry>""" for p in posts)
     return f"""<?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"
+      xmlns:webfeeds="http://webfeeds.org/rss/1.0">
   <title>matchbox.health blog</title>
+  <subtitle>{html.escape(html.unescape(INDEX_LEDE))}</subtitle>
   <link rel="alternate" type="text/html" href="{SITE}/blog/"/>
   <link rel="self" type="application/atom+xml" href="{SITE}/blog/feed.xml"/>
   <id>{SITE}/blog/</id>
+  <icon>{ICON}</icon>
+  <logo>{CARD}</logo>
+  <webfeeds:icon>{ICON}</webfeeds:icon>
+  <webfeeds:cover image="{CARD}"/>
+  <webfeeds:accentColor>3d5c73</webfeeds:accentColor>
   <updated>{stamp(max(p['date'] for p in posts))}</updated>
 {entries}
 </feed>

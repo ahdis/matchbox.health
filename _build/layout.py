@@ -52,6 +52,10 @@ SOCIAL = [
 ]
 
 SITE = "https://www.matchbox.health"
+# PNG, not WebP: link previews and feed readers do not all take WebP. Made from
+# the logo by _design/tools/feed-images.mjs.
+CARD = f"{SITE}/assets/img/social-card.png"   # 1200x630
+ICON = f"{SITE}/assets/img/feed-icon.png"     # 256x256
 
 
 def rel(href, base):
@@ -175,11 +179,14 @@ def page(title, description, body, canonical="/", base="", indexable=True,
 <meta property="og:description" content="{description}">
 <meta property="og:type" content="{og_type}">
 <meta property="og:url" content="{canon_url}">
-<meta property="og:image" content="{SITE}/assets/img/matchbox-logo.webp">
-<meta property="og:image:width" content="725">
-<meta property="og:image:height" content="306">
+<meta property="og:image" content="{CARD}">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The matchbox logo">
 <meta name="twitter:card" content="summary_large_image">
 {head}<link rel="icon" href="{base}assets/img/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="{base}assets/img/feed-icon.png">
 <link rel="preload" as="font" type="font/woff2" href="{base}assets/fonts/poppins-400-latin.woff2" crossorigin>
 <link rel="preload" as="font" type="font/woff2" href="{base}assets/fonts/poppins-500-latin.woff2" crossorigin>
 <link rel="stylesheet" href="{base}assets/css/site.css">
