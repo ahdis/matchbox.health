@@ -226,7 +226,7 @@ if posts:
                          p.get('original') or p['path'], base=base,
                          og_type='article', head=blog.head(p)))
     write('blog/index.html', page('Blog &mdash; matchbox.health',
-                                  'Releases, configuration and measurements of Matchbox.',
+                                  blog.INDEX_LEDE,
                                   localize(blog.index_body(posts), '../'), '/blog/',
                                   base='../', head=blog.head()))
     write('blog/feed.xml', blog.feed(posts, rendered))

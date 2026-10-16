@@ -29,6 +29,10 @@ FRONT = re.compile(r'\A---\n(.*?)\n---\n', re.S)
 COMMENT = re.compile(r'<!--.*?-->\n?', re.S)
 REQUIRED = ('title', 'date', 'author', 'summary')
 EXT = ' target="_blank" rel="noopener"'
+# The banner of /blog/, also its meta description. HL7 and FHIR are registered
+# trademarks of HL7, marked as on the home page.
+INDEX_LEDE = ('Latest news, updates and insights on HL7&reg; FHIR&reg; validation and mapping '
+              'with Matchbox.')
 
 
 class PostError(SystemExit):
@@ -185,8 +189,7 @@ def index_body(posts):
     <div class="wrap post-hero__inner">
       <div class="column">
         <h1 class="post-hero__title">Blog</h1>
-        <p class="post-hero__lede">Releases, configuration and measurements of Matchbox, written for
-          the people who deploy and integrate it.</p>
+        <p class="post-hero__lede">{INDEX_LEDE}</p>
         <p class="post-hero__feed"><a href="/blog/feed.xml">Atom feed</a></p>
       </div>
     </div>
