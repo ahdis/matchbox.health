@@ -1,26 +1,15 @@
 ---
-title: ""
+title: "Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup"
 date: 2026-09-26
 author: Oliver Egger
 github: oliveregger
-summary: ""
-tags: []
+summary: "Matchbox 4.1.18 no longer sets a fixed 12 GB heap: a typical validation server now runs in a 4 GB container, also with several IGs. How an AI agent and a reproducible load test found and fixed the memory culprits in 24 hours."
+tags: [performance, validation, docker, ai]
 matchbox: 4.1.18
 original: https://www.ahdis.ch/en/blog/2026/matchbox-memory
 ---
 
-<!--
-Notes for the agent: this is the ahdis.ch article of 26 September 2026,
-republished on matchbox.health. Keep the text unchanged: same order, same
-wording, same tables. Move the title and the byline line into the front
-matter, write the summary and the tags, check the links and build.
--->
-
-# Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup
-
-Sep 26, 2026 · @Oliver Egger
-
-In 24 hours, [Matchbox](https://www.matchbox.health/) went from a fixed 12 GB heap to a 4 GB container for a typical validation server. The work was done by an AI agent, Claude Code with Opus 5.5: it ran the builds, the load tests and the heap dump analysis, and proposed and implemented the optimizations, while a human stayed in the loop for every decision. This article describes how we got there, and why a reproducible load test mattered as much as the agent.
+In 24 hours, [Matchbox](/) went from a fixed 12 GB heap to a 4 GB container for a typical validation server. The work was done by an AI agent, Claude Code with Opus 5.5: it ran the builds, the load tests and the heap dump analysis, and proposed and implemented the optimizations, while a human stayed in the loop for every decision. This article describes how we got there, and why a reproducible load test mattered as much as the agent.
 
 ## Matchbox and why validation matters
 

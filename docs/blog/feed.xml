@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>matchbox.health blog</title>
+  <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/"/>
+  <link rel="self" type="application/atom+xml" href="https://www.matchbox.health/blog/feed.xml"/>
+  <id>https://www.matchbox.health/blog/</id>
+  <updated>2026-09-26T00:00:00Z</updated>
+  <entry>
+    <title>Matchbox: from 12 GB to 4 GB – 24 hours with an AI agent and a test setup</title>
+    <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/2026/matchbox-memory/"/>
+    <id>https://www.matchbox.health/blog/2026/matchbox-memory/</id>
+    <published>2026-09-26T00:00:00Z</published>
+    <updated>2026-09-26T00:00:00Z</updated>
+    <author><name>Oliver Egger</name></author>
+    <summary>Matchbox 4.1.18 no longer sets a fixed 12 GB heap: a typical validation server now runs in a 4 GB container, also with several IGs. How an AI agent and a reproducible load test found and fixed the memory culprits in 24 hours.</summary>
+    <content type="html">&lt;p&gt;In 24 hours, &lt;a href=&quot;https://www.matchbox.health/&quot;&gt;Matchbox&lt;/a&gt; went from a fixed 12 GB heap to a 4 GB container for a typical validation server. The work was done by an AI agent, Claude Code with Opus 5.5: it ran the builds, the load tests and the heap dump analysis, and proposed and implemented the optimizations, while a human stayed in the loop for every decision. This article describes how we got there, and why a reproducible load test mattered as much as the agent.&lt;/p&gt;
+&lt;h2 id=&quot;matchbox-and-why-validation-matters&quot;&gt;Matchbox and why validation matters&lt;/h2&gt;
+&lt;p&gt;&lt;a href=&quot;https://hl7.org/fhir/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;FHIR®&lt;/a&gt;, the HL7 standard for healthcare interoperability, leaves a lot of freedom in how data is represented. To guarantee the correctness of an exchange like a lab report or a patient summary, FHIR resources are validated against the rules published in FHIR implementation guides (IGs): which fields are required, which codes are allowed, which cardinalities apply.&lt;/p&gt;
+&lt;p&gt;&lt;a href=&quot;https://github.com/ahdis/matchbox&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Matchbox&lt;/a&gt; is our open-source FHIR validation and mapping tooling. It wraps the official &lt;a href=&quot;https://confluence.hl7.org/spaces/FHIR/pages/35718580/Using+the+FHIR+Validator&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;HL7 FHIR validator&lt;/a&gt; in a server with its own FHIR API and a web GUI, supports multiple IGs at once, and also offers validation through an &lt;a href=&quot;https://ahdis.github.io/matchbox/validation-with-ai-tutorial/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;MCP service&lt;/a&gt;. We started in August 2020 and have published &lt;a href=&quot;https://github.com/ahdis/matchbox/releases&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;98 releases&lt;/a&gt; since then. It runs in production infrastructure (e.g. the Swiss notification of laboratory results, &lt;a href=&quot;https://fhir.ch/ig/ch-elm/api.html&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;ch-elm&lt;/a&gt;), in test platforms such as &lt;a href=&quot;https://gazelle.ihe.net/?page_id=147&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;IHE Gazelle&lt;/a&gt; at &lt;a href=&quot;https://www.ihe.net/testing/connectathon/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;IHE connectathons&lt;/a&gt; and &lt;a href=&quot;https://ehealthsuisse.ihe-europe.net/gazelle/home&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;projectathons&lt;/a&gt;, and in integration pipelines.&lt;/p&gt;
+&lt;h2 id=&quot;memory-became-the-bottleneck&quot;&gt;Memory became the bottleneck&lt;/h2&gt;
+&lt;p&gt;FHIR IGs tend to get bigger: to stay aligned with international developments, they depend on European and international IGs, and each new terminology dependency makes validation hungrier for memory. Initially, we assumed this was a natural evolution and let the container grow. Then we were asked why an existing validation setup needed four times the memory within one year. In addition, several issues and pull requests from the community pointed to memory problems:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Achraf (&lt;a href=&quot;https://github.com/achrafachkari&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@achrafachkari&lt;/a&gt;) found that the human-readable HTML narrative of every loaded resource stayed in memory (&lt;a href=&quot;https://github.com/ahdis/matchbox/issues/566&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#566&lt;/a&gt;).&lt;/li&gt;
+&lt;li&gt;Valentin (&lt;a href=&quot;https://github.com/reva&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@reva&lt;/a&gt;) measured better throughput with a smaller heap than the image&#x27;s default of 12 GB and asked for configurable JVM options (&lt;a href=&quot;https://github.com/ahdis/matchbox/issues/594&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#594&lt;/a&gt;, &lt;a href=&quot;https://github.com/ahdis/matchbox/pull/595&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#595&lt;/a&gt;).&lt;/li&gt;
+&lt;li&gt;We ourselves hit an &lt;code&gt;OutOfMemoryError&lt;/code&gt; on &lt;a href=&quot;https://test.ahdis.ch/matchboxv3/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;our memory-constrained test instance&lt;/a&gt;, while the health check still reported the server as up (&lt;a href=&quot;https://github.com/ahdis/matchbox/issues/457&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#457&lt;/a&gt;).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;In release 4.1.14 we had already added &lt;a href=&quot;https://ahdis.github.io/matchbox/docker/#live-and-readiness-checks&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;memory metrics&lt;/a&gt; to Matchbox, but observing the problem was not enough. Fortunately, we also had &lt;a href=&quot;https://github.com/ahdis/matchbox/tree/main/jmeter&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;test setups for load testing&lt;/a&gt;.&lt;/p&gt;
+&lt;h2 id=&quot;the-test-setup-reproduce-before-you-optimize&quot;&gt;The test setup: reproduce before you optimize&lt;/h2&gt;
+&lt;p&gt;The test setups were mostly used to reproduce concurrency issues in validation: &lt;a href=&quot;https://jmeter.apache.org/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Apache JMeter&lt;/a&gt; sends 8,000 validations of a ch-elm lab report (4 threads) to a Matchbox container and asks the server for its memory use after each one. The results were trustworthy, but the comparison was manual on my development machine, and reruns were difficult to compare because the machine load could differ between runs.&lt;/p&gt;
+&lt;p&gt;So we first made the measurements reproducible. A script starts a fresh container and records the startup time, the first and the second validation, and the live heap. All runs happened on the same idle machine. To check servers with several IGs, a &lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/jmeter/multi-ig.jmx&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;second JMeter test&lt;/a&gt; validates examples from different IGs, each of which gets its own validation engine. For a validator, a faster answer is worthless if it is a different answer, so every run also compared the validation results.&lt;/p&gt;
+&lt;h2 id=&quot;working-with-an-ai-agent&quot;&gt;Working with an AI agent&lt;/h2&gt;
+&lt;p&gt;Extending the test setup and the analysis were all done with &lt;a href=&quot;https://claude.com/claude-code&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Claude Code&lt;/a&gt; and Opus 5.5 (high effort) within VS Code. My job was to set the direction, review the findings and make every decision. What Claude Opus 5.5 did:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Bisecting across releases.&lt;/strong&gt; It pulled or rebuilt ten &lt;a href=&quot;https://github.com/ahdis/matchbox-ch-elm&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;ch-elm images&lt;/a&gt; of the last nine months (Matchbox &lt;a href=&quot;https://github.com/ahdis/matchbox/releases/tag/v4.0.16&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;4.0.16&lt;/a&gt; to &lt;a href=&quot;https://github.com/ahdis/matchbox/releases/tag/v4.1.18&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;4.1.18&lt;/a&gt;), ran the same load test on each, and found in which release validation became slower and in which it became faster again, to get a clearer view of the problem.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Profiling and heap dumps.&lt;/strong&gt; With &lt;a href=&quot;https://en.wikipedia.org/wiki/JDK_Flight_Recorder&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Java Flight Recorder&lt;/a&gt; it recorded which code paths parsed resources. With &lt;a href=&quot;https://eclipse.dev/mat/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Eclipse Memory Analyzer&lt;/a&gt; it analyzed heap dumps in headless mode: which objects keep the memory alive, per package and per validation engine.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Reading upstream code, recommending and implementing optimizations.&lt;/strong&gt; It compared Matchbox with the official HL7 validator in &lt;a href=&quot;https://github.com/hapifhir/org.hl7.fhir.core&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;org.hl7.fhir.core&lt;/a&gt;, changed the code, ran the tests and repeated the measurements until the numbers and the validation results matched.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;In 24 hours this added up to about 35 load and startup test runs, 17 Docker image builds, 10 Matchbox versions compared and 9 heap dumps analyzed.&lt;/p&gt;
+&lt;h2 id=&quot;the-culprits-in-memory-consumption&quot;&gt;The culprits in memory consumption&lt;/h2&gt;
+&lt;p&gt;The heap dumps showed where the memory went. For ch-elm, 44,650 conformance resources (profiles, value sets, code systems) were loaded, all parsed into Java objects, consuming about 1 GB. The IG and its dependencies alone pull in seven versions of the &lt;a href=&quot;https://terminology.hl7.org/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;HL7 terminology&lt;/a&gt; package. The main culprits and their fixes:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Leftover package files (−171 MB).&lt;/strong&gt; For a handful of small files, a helper kept a reference to the whole package it came from. So all raw files of &lt;code&gt;hl7.fhir.r4.core&lt;/code&gt; and &lt;code&gt;hl7.fhir.uv.xver-r5.r4&lt;/code&gt; (210 MB) stayed in memory. It now keeps only the file it needs, which lowers the live heap by 171 MB.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Identical strings (−15%, about 220 MB).&lt;/strong&gt; The many package versions contain a lot of identical text. Java&#x27;s &lt;a href=&quot;https://openjdk.org/jeps/192&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;string deduplication&lt;/a&gt; (&lt;code&gt;-XX:+UseStringDeduplication&lt;/code&gt;) lets the garbage collector share it, at no measurable cost. It is now on by default.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Everything parsed up front (−330 MB).&lt;/strong&gt; The official validator loads resources lazily: it registers each resource with some metadata and parses it only when a validation needs it. Matchbox had never adopted this for its package loading. Now the terminology resources (code systems, value sets, naming systems, concept maps) are loaded lazily. Matchbox also pins the terminology resources of the FHIR core to their core versions; this step now reads the versions from the metadata instead of parsing every resource.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Unused definitions of the database layer (−40 MB).&lt;/strong&gt; The search indexing of the underlying &lt;a href=&quot;https://hapifhir.io/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;HAPI FHIR&lt;/a&gt; server loaded all 649 FHIR core profiles for a type analysis it never uses.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The agent discovered all four of these issues and presented approaches to solve them. Not every idea worked. Loading &lt;em&gt;all&lt;/em&gt; resources lazily made the first validation take 2.4 instead of 0.85 seconds, because the validator walks through all profiles on first use anyway. So profiles are parsed at startup, like in the official validator, and terminology on demand.&lt;/p&gt;
+&lt;h2 id=&quot;results-for-a-single-ig&quot;&gt;Results for a single IG&lt;/h2&gt;
+&lt;p&gt;For ch-elm, a typical production setup with one IG, the &lt;a href=&quot;https://github.com/ahdis/matchbox-ch-elm&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;ch-elm image&lt;/a&gt; 1.15.3 (based on Matchbox 4.1.18) needs 660 MB of heap. That is less than a third of image 1.13.1, which still ran with 3 GB, and a fifth of image 1.14.1, which needs 3.4 GB and no longer fits into 3 GB. It validates three times faster than 1.13.1, and as fast as 1.15.2. Compared with 1.15.2, the memory drops by more than half and the server starts about 25% faster. Startup is still slower than with 1.13.1; as each image changes both the Matchbox and the ch-elm version, the two effects can&#x27;t be separated here.&lt;/p&gt;
+&lt;div class=&quot;table-scroll&quot;&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Matchbox release (ch-elm image)&lt;/th&gt;
+&lt;th&gt;4.0.16 (1.13.1)&lt;/th&gt;
+&lt;th&gt;4.1.9 (1.14.1)&lt;/th&gt;
+&lt;th&gt;4.1.17 (1.15.2)&lt;/th&gt;
+&lt;th&gt;4.1.18 (1.15.3)&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Heap limit of the image&lt;/td&gt;
+&lt;td&gt;3 GB&lt;/td&gt;
+&lt;td&gt;12 GB&lt;/td&gt;
+&lt;td&gt;12 GB&lt;/td&gt;
+&lt;td&gt;70% of the container memory&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Live heap after 8,000 validations&lt;/td&gt;
+&lt;td&gt;2,300 MB&lt;/td&gt;
+&lt;td&gt;3,420 MB&lt;/td&gt;
+&lt;td&gt;1,560 MB&lt;/td&gt;
+&lt;td&gt;660 MB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Server ready after&lt;/td&gt;
+&lt;td&gt;36–37 s&lt;/td&gt;
+&lt;td&gt;43–46 s&lt;/td&gt;
+&lt;td&gt;65–67 s&lt;/td&gt;
+&lt;td&gt;48–49 s&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Validation under load (median of 8,000)&lt;/td&gt;
+&lt;td&gt;327 ms&lt;/td&gt;
+&lt;td&gt;250 ms&lt;/td&gt;
+&lt;td&gt;104 ms&lt;/td&gt;
+&lt;td&gt;108 ms&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Runs the load test in a 3 GB heap&lt;/td&gt;
+&lt;td&gt;Yes&lt;/td&gt;
+&lt;td&gt;No (live heap 3.4 GB)&lt;/td&gt;
+&lt;td&gt;Yes&lt;/td&gt;
+&lt;td&gt;Yes, also in 1 GB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+&lt;h2 id=&quot;several-igs-share-what-engines-have-in-common&quot;&gt;Several IGs: share what engines have in common&lt;/h2&gt;
+&lt;p&gt;Matchbox creates one validation engine per IG/validation parameters, so that the rules of one IG cannot interfere with another. The heap dumps showed that, apart from the FHIR core and the base terminology, each engine loaded all its packages again. Swiss IGs share most of their dependencies, so with twelve IGs, 133,000 resource objects existed more than once: 2.3 GB of duplicates. Now a cache shares the loaded packages between the engines. It keeps only weak references, so a package is freed when the last engine using it is dropped after an hour without use.&lt;/p&gt;
+&lt;p&gt;We measured this with &lt;a href=&quot;https://github.com/ahdis/matchbox/tree/main/matchbox-server/with-preload&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;with-preload&lt;/a&gt;, a sample configuration of Matchbox that preloads 12 Swiss IGs with their dependencies (55 packages). With the new default in a container with a 4 GB limit (a heap of 2.8 GB), all 12 engines ran 400 validations without failures and used 3.5 GB of the container&#x27;s memory.&lt;/p&gt;
+&lt;div class=&quot;table-scroll&quot;&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;with-preload: 12 Swiss IGs, 55 packages&lt;/th&gt;
+&lt;th&gt;Release 4.1.9&lt;/th&gt;
+&lt;th&gt;Release 4.1.17&lt;/th&gt;
+&lt;th&gt;Release 4.1.18&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Heap limit of the image&lt;/td&gt;
+&lt;td&gt;12 GB&lt;/td&gt;
+&lt;td&gt;12 GB&lt;/td&gt;
+&lt;td&gt;70% of the container memory&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Live heap with all 12 engines&lt;/td&gt;
+&lt;td&gt;10,630 MB&lt;/td&gt;
+&lt;td&gt;4,756 MB&lt;/td&gt;
+&lt;td&gt;1,187 MB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Memory held by the 12 IG engines alone&lt;/td&gt;
+&lt;td&gt;8,123 MB&lt;/td&gt;
+&lt;td&gt;3,465 MB&lt;/td&gt;
+&lt;td&gt;177 MB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Duplicated between engines&lt;/td&gt;
+&lt;td&gt;n.a.&lt;/td&gt;
+&lt;td&gt;2,278 MB&lt;/td&gt;
+&lt;td&gt;1 MB&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Creating an IG engine (median)&lt;/td&gt;
+&lt;td&gt;19 s&lt;/td&gt;
+&lt;td&gt;48 s&lt;/td&gt;
+&lt;td&gt;16 s&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+&lt;h2 id=&quot;what-changes-for-you-as-a-matchbox-user&quot;&gt;What changes for you as a Matchbox user&lt;/h2&gt;
+&lt;p&gt;The changes are released in &lt;a href=&quot;https://github.com/ahdis/matchbox/releases/tag/v4.1.18&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Matchbox 4.1.18&lt;/a&gt; and the &lt;a href=&quot;https://github.com/ahdis/matchbox-ch-elm/releases/tag/1.15.3&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;ch-elm image 1.15.3&lt;/a&gt;:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;A new memory default.&lt;/strong&gt; The &lt;a href=&quot;https://ahdis.github.io/matchbox/docker/#jvm-options&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Docker image&lt;/a&gt; no longer sets a fixed 12 GB heap, which could even exceed the memory limit of a container. It now uses 70% of the container&#x27;s memory limit (&lt;code&gt;-XX:MaxRAMPercentage=70&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;4 GB is enough for a typical setup.&lt;/strong&gt; We recommend a memory limit of 4 GB for the container, also for multiple IGs. A single IG such as ch-elm runs comfortably with 3 GB.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Configurable JVM options.&lt;/strong&gt; The options can be overridden with the &lt;code&gt;JDK_JAVA_OPTIONS&lt;/code&gt; environment variable (&lt;a href=&quot;https://github.com/ahdis/matchbox/issues/594&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#594&lt;/a&gt;). Setting it replaces the default, so include a heap setting, &lt;code&gt;-XX:+ExitOnOutOfMemoryError&lt;/code&gt; and &lt;code&gt;-XX:+UseStringDeduplication&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A restart instead of a zombie.&lt;/strong&gt; On the first &lt;code&gt;OutOfMemoryError&lt;/code&gt;, the server now exits (&lt;code&gt;-XX:+ExitOnOutOfMemoryError&lt;/code&gt;) instead of continuing in an undefined state while the health check reports it as up, so that Docker or Kubernetes can restart it (&lt;a href=&quot;https://github.com/ahdis/matchbox/issues/457&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;#457&lt;/a&gt;).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Faster engines.&lt;/strong&gt; Compared with 4.1.17, the server starts about 25% faster and creates IG engines three times faster.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class=&quot;code&quot;&gt;&lt;span class=&quot;code__lang&quot;&gt;bash&lt;/span&gt;&lt;pre&gt;&lt;code&gt;docker&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;run&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-d&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;--name&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;matchbox&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-p&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;m&quot;&gt;8080&lt;/span&gt;:8080&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;-m&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;4g&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;europe-west6-docker.pkg.dev/ahdis-ch/ahdis/matchbox:latest
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;h2 id=&quot;lessons-a-day-instead-of-weeks-with-an-agent&quot;&gt;Lessons: a day instead of weeks with an agent&lt;/h2&gt;
+&lt;p&gt;I could have done almost all of this myself. I&#x27;m familiar with load testing, bisecting releases, profiling and heap dump analysis, but less so with tools such as JFR or Eclipse Memory Analyzer. Even after we noticed the memory problem, I could not find the time: each step means waiting for a 30-minute test run, writing heap dump queries or reading code in a large upstream project.&lt;/p&gt;
+&lt;p&gt;Opus 5.5 took over exactly these steps: it ran them continuously, one after another and in parallel, in one session of 1 million tokens. I let it write a whole &lt;a href=&quot;https://github.com/ahdis/matchbox/blob/main/jmeter/claude-jmeter-check.md&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;runbook&lt;/a&gt; and continued in a new session the next day, to verify that the setup can be reused and this is not a one-shot optimization.&lt;/p&gt;
+&lt;p&gt;The agent found features in the core libraries that we had missed, and proposed new approaches, such as sharing the loaded FHIR packages between the engines. I had not seen these qualities in agentic coding before. Opus 4.7 was the first model that could handle the Matchbox code, but Opus 5.5 is another leap: it can be used for software engineering, not just coding.&lt;/p&gt;
+&lt;p&gt;The reproducible test setup made this possible. Every proposal of the agent was measured against the same load test on the same machine, and every run checked that the validation results stayed the same. Every pull request goes through our Matchbox &lt;a href=&quot;https://github.com/ahdis/matchbox/tree/main/matchbox-engine/src/test&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;engine&lt;/a&gt; and &lt;a href=&quot;https://github.com/ahdis/matchbox/tree/main/matchbox-server/src/test&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;server tests&lt;/a&gt;, which check specific validation features, and our &lt;a href=&quot;https://github.com/ahdis/matchbox-int-tests&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;integration tests&lt;/a&gt;, which check that the examples of the IGs we are interested in are still validated correctly. Without that, we could neither have trusted the improvements nor rejected the wrong ideas.&lt;/p&gt;
+&lt;p&gt;And a human in the loop stays essential. The agent proposed, measured and implemented, but not every proposal was right. Loading only the newest version of each terminology package would have saved 400 MB, but the IGs depend on specific versions, and validating against just the latest terminology version can change the results. Loading all resources lazily saved memory but made the first validation three times slower. I knew that multiple package versions are needed, which trade-offs are acceptable, and when a proposal was wrong.&lt;/p&gt;
+&lt;p&gt;In one day we delivered a Matchbox release that needs a fraction of the memory. But it needs the community to raise awareness and bring urgency to the problems, so thanks again to Achraf (&lt;a href=&quot;https://github.com/achrafachkari&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@achrafachkari&lt;/a&gt;), Valentin (&lt;a href=&quot;https://github.com/reva&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@reva&lt;/a&gt;) and especially my colleague Quentin (&lt;a href=&quot;https://github.com/qligier&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;@qligier&lt;/a&gt;), co-maintainer of Matchbox, who has to review all my pull requests co-authored with Claude Code.&lt;/p&gt;
+&lt;p&gt;Disclaimer: As with the code, I used Claude to help me with this blog article, but I read and refined every sentence.&lt;/p&gt;
+</content>
+  </entry>
+</feed>
