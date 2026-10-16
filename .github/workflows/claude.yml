@@ -5,6 +5,9 @@
 #              commits to the PR branch and comments what it did.
 #  iterate     Any PR comment, review or review comment containing @claude.
 #
+# Each run writes its turns, tokens, cost at API prices and any denied tool
+# calls to the run's summary page (.github/scripts/claude-usage.py).
+#
 # Only users with write access can trigger either job, and bot actors are
 # rejected, so Claude's own pushes and comments never start it again.
 # Auth: a Claude subscription token (`claude setup-token`) in the repository
@@ -58,13 +61,19 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: pip install -r requirements.txt
-      - uses: anthropics/claude-code-action@v1.0.239
+      - id: claude
+        uses: anthropics/claude-code-action@v1.0.239
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: /matchbox-blog ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
           claude_args: ${{ env.CLAUDE_ARGS }}
+      - name: Usage summary
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: python3 .github/scripts/claude-usage.py >> "$GITHUB_STEP_SUMMARY"
 
   iterate:
     if: >-
@@ -88,9 +97,15 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: pip install -r requirements.txt
-      - uses: anthropics/claude-code-action@v1.0.239
+      - id: claude
+        uses: anthropics/claude-code-action@v1.0.239
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: ${{ env.CLAUDE_ARGS }}
+      - name: Usage summary
+        if: always() && steps.claude.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: python3 .github/scripts/claude-usage.py >> "$GITHUB_STEP_SUMMARY"
