@@ -6,11 +6,6 @@ summary: "At the IHE North America Connectathon, the team of Prometheus Computin
 tags: [validation, ips, connectathon]
 ---
 
-<!--
-Notes for the agent. Guest article by Youssef Bouij (Prometheus Computing), already
-prepared and built locally. Keep the text unchanged: only check and build.
--->
-
 *Guest article by Youssef Bouij, Prometheus Computing*
 
 In October 2026 our team took part in the IHE North America Connectathon, on the "IPS and secondary use" track. The track tests International Patient Summary documents that carry Occupational Data for Health (ODH) observations in their Social history section: a patient's usual work, past or present jobs, employment status, retirement date and combat zone periods.
