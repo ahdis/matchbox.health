@@ -4,4 +4,5 @@
   <url><loc>https://www.matchbox.health/features/</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://www.matchbox.health/privacy-policy/</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://www.matchbox.health/blog/</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://www.matchbox.health/blog/2026/matchbox-ihe-na-connectathon/</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
 </urlset>
