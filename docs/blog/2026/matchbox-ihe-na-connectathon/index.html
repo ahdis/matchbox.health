@@ -79,7 +79,7 @@
   <section class="section section--white post">
     <div class="wrap post__inner">
       <article class="column article">
-<p><em>Guest article by Youssef Bouij, <a href="https://prometheuscomputing.com/" target="_blank" rel="noopener">Prometheus Computing</a></em></p>
+<p><em>Guest article by <a href="https://github.com/YoussefBouij" target="_blank" rel="noopener">Youssef Bouij</a>, <a href="https://prometheuscomputing.com/" target="_blank" rel="noopener">Prometheus Computing</a></em></p>
 <p>In October 2026 our team took part in the <a href="https://www.ihe.net/testing/connectathon/" target="_blank" rel="noopener">IHE North America Connectathon</a>, on the &quot;IPS and secondary use&quot; track. The track tests <a href="https://hl7.org/fhir/uv/ips/" target="_blank" rel="noopener">International Patient Summary</a> documents that carry Occupational Data for Health (ODH) observations in their Social history section: a patient's usual work, past or present jobs, employment status, retirement date and combat zone periods.</p>
 <p>Testers on the track had a practical problem. An IPS document with ODH inside has to satisfy two implementation guides at once, and the two guides are published by different organisations on different schedules. Checking a document meant running it against IPS, then pulling out each occupational observation and checking it against the right ODH profile, then putting the two answers together by hand.</p>
 <p>We built a small web validator during the week to do that in one click. Matchbox does all of the validation. This article describes what we built on top of it and what made Matchbox a good base for it.</p>
