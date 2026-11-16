@@ -7,9 +7,9 @@ summary: "At the IHE North America Connectathon, the team of Prometheus Computin
 tags: [validation, ips, connectathon]
 ---
 
-*Guest article by Youssef Bouij, Prometheus Computing*
+*Guest article by Youssef Bouij, [Prometheus Computing](https://prometheuscomputing.com/)*
 
-In October 2026 our team took part in the IHE North America Connectathon, on the "IPS and secondary use" track. The track tests International Patient Summary documents that carry Occupational Data for Health (ODH) observations in their Social history section: a patient's usual work, past or present jobs, employment status, retirement date and combat zone periods.
+In October 2026 our team took part in the [IHE North America Connectathon](https://www.ihe.net/testing/connectathon/), on the "IPS and secondary use" track. The track tests [International Patient Summary](https://hl7.org/fhir/uv/ips/) documents that carry Occupational Data for Health (ODH) observations in their Social history section: a patient's usual work, past or present jobs, employment status, retirement date and combat zone periods.
 
 Testers on the track had a practical problem. An IPS document with ODH inside has to satisfy two implementation guides at once, and the two guides are published by different organisations on different schedules. Checking a document meant running it against IPS, then pulling out each occupational observation and checking it against the right ODH profile, then putting the two answers together by hand.
 
@@ -21,7 +21,7 @@ You paste or upload a FHIR document, pick the guides, and press Validate. The to
 
 ![The combined IPS and ODH check on the IHE FIIO example document](/assets/img/blog/2026/matchbox-ihe-na-connectathon/01-ips-odh-combined-check.png)
 
-*The combined IPS and ODH check on the IHE FIIO example document. One verdict, the profiles and engines used, and what was found in the bundle.*
+*The combined IPS and ODH check on the [IHE FIIO](https://profiles.ihe.net/PCC/FIIO/) example document. One verdict, the profiles and engines used, and what was found in the bundle.*
 
 Behind that one click there are two Matchbox calls:
 
@@ -46,7 +46,7 @@ For this the tool reads the guide's Composition profile to learn which profile e
 
 ## Several guides, one server
 
-This is where Matchbox helped us most. A single Matchbox server held every guide the track needed: the International Patient Summary, the IHE ODH guide, and later the US and Canadian patient summaries and the US ODH guide. The ODH guide was still changing during the week, and Matchbox could load it straight from its latest build.
+This is where Matchbox helped us most. A single Matchbox server held every guide the track needed: the International Patient Summary, the [IHE ODH guide](https://profiles.ihe.net/PCC/ODH/), and later the [US](https://hl7.org/fhir/us/pcs/) and [Canadian](https://simplifier.net/packages/ca.infoway.io.psca/0.0.4) patient summaries and the [US ODH guide](https://hl7.org/fhir/us/odh/). The ODH guide was still changing during the week, and Matchbox could load it straight from its [latest build](https://build.fhir.org/ig/IHE/PCC.ODH/).
 
 Matchbox keeps each guide in its own validation engine, and every check names the guide it should use. So a tester always knows exactly which guide and version their document was judged against, even when two versions of a guide sit on the same server.
 
@@ -58,7 +58,7 @@ When the track asked mid-week for the US and Canadian guides, adding them to Mat
 
 ## Reports testers can hand over
 
-Connectathon testers need something to attach to a test record. Every check can be downloaded as a single HTML file, laid out like the Gazelle validation report that participants already know. It names the document and its SHA-256, the profiles, the engines and their versions, whether codes were checked against the terminology server, and who ran it. The same content is available as JSON, with the OperationOutcomes inside.
+Connectathon testers need something to attach to a test record. Every check can be downloaded as a single HTML file, laid out like the [Gazelle](https://gazelle.ihe.net/) validation report that participants already know. It names the document and its SHA-256, the profiles, the engines and their versions, whether codes were checked against the terminology server, and who ran it. The same content is available as JSON, with the OperationOutcomes inside.
 
 ![The downloaded HTML report](/assets/img/blog/2026/matchbox-ihe-na-connectathon/05-downloaded-html-report.png)
 
@@ -67,19 +67,19 @@ Connectathon testers need something to attach to a test record. Every check can 
 ## What worked well
 
 - **Speed.** A full IPS bundle with six ODH observations validates in about half a second on a laptop, both engines included. People could fix a document and check it again without waiting.
-- **Packaging.** The official Docker image, one YAML file and a volume for the downloaded packages were all we needed. We could give the track lead a zip that runs with `docker compose up` and nothing else installed.
-- **Continuous builds.** Loading a package by URL let us test against a guide that was still changing during the week.
+- **Packaging.** The [official Docker image](https://ahdis.github.io/matchbox/docker/), one YAML file and a volume for the downloaded packages were all we needed. We could give the track lead a zip that runs with `docker compose up` and nothing else installed.
+- **Continuous builds.** [Loading a package by URL](https://ahdis.github.io/matchbox/matchbox-server/#implementationguides) let us test against a guide that was still changing during the week.
 - **The same engine as the official portal.** The Gazelle validation portal at the Connectathon is also backed by Matchbox, so a result in our tool and a result in the portal came from the same engine.
-- **Locking it down.** With `httpReadOnly: true` the server still validates, but nobody on the event network can install or remove packages.
+- **Locking it down.** With [`httpReadOnly: true`](https://ahdis.github.io/matchbox/matchbox-server/#read-only) the server still validates, but nobody on the event network can install or remove packages.
 
 ## What we learned
 
 - Plan memory for the number of engines. Seven engines use about 4 GB, and we give the container 7 GB.
-- When more than one version of a guide is loaded, always pass `ig`. A profile URL alone is not enough to say which version you mean.
+- When more than one version of a guide is loaded, always pass [`ig`](https://ahdis.github.io/matchbox/validation/#fhir-api). A profile URL alone is not enough to say which version you mean.
 - An empty `"meta": {}` is rejected, so when the tool removes a declared profile from its working copy it removes the whole element.
 - Bundle link findings report entry positions counting from 1, while the other findings count from 0. We handle both when we map a finding back to a line in the editor.
 - Published examples are good test inputs, and some of them do not pass their own guide. That is worth knowing before a tester assumes the mistake is theirs.
 
 ## Thank you
 
-At Prometheus Computing we build standards and interoperability testing tools for immunization, lab reporting, syndromic surveillance and CDA. FHIR validation was newer ground for us, and Matchbox let a small team deliver something useful within the week of the event. Thank you to Oliver Egger and the ahdis team for building it and keeping it open, and to Matt Blackmon of The Sequoia Project, who pointed us to the right version and saved us a good deal of time.
+At Prometheus Computing we build standards and interoperability testing tools for immunization, lab reporting, syndromic surveillance and CDA. FHIR validation was newer ground for us, and Matchbox let a small team deliver something useful within the week of the event. Thank you to Oliver Egger and the ahdis team for building it and keeping it open, and to Matt Blackmon of [The Sequoia Project](https://sequoiaproject.org/), who pointed us to the right version and saved us a good deal of time.
