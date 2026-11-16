@@ -82,4 +82,4 @@ Connectathon testers need something to attach to a test record. Every check can 
 
 ## Thank you
 
-At Prometheus Computing we build standards and interoperability testing tools for immunization, lab reporting, syndromic surveillance and CDA. FHIR validation was newer ground for us, and Matchbox let a small team deliver something useful within the week of the event. Thank you to Oliver Egger and the ahdis team for building it and keeping it open, and to Matt Blackmon of [The Sequoia Project](https://sequoiaproject.org/), who pointed us to the right version and saved us a good deal of time.
+At Prometheus Computing we build standards and interoperability testing tools for immunization, lab reporting, syndromic surveillance and CDA. FHIR validation was newer ground for us, and Matchbox let a small team deliver something useful within the week of the event. Thank you to Oliver Egger and the ahdis team for building it and keeping it open, and to [Matt Blackmon](https://github.com/matt-blackmon) of [The Sequoia Project](https://sequoiaproject.org/), who pointed us to the right version and saved us a good deal of time.
