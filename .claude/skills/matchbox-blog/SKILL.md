@@ -27,9 +27,9 @@ override the defaults below (for example "keep the text unchanged", "only check 
 | --- | --- |
 | `title` | Required. If the draft starts with a `# Title` line instead, move it here and delete the line. Quote it when it contains `:`. |
 | `date` | Required, `YYYY-MM-DD`, and **must match the file name**. If the draft has a byline like "Sep 26, 2026 · @Name", use that date, rename the file to match (`git mv`), and delete the byline line. |
-| `author`, `github` | Full name, and the GitHub handle without `@`. |
+| `author`, `github` | Full name, and the GitHub handle without `@`. Set `github` only when the author or the PR gives the handle; a search result with the same name is not enough, ask instead. |
 | `summary` | Required. 1–2 sentences, used in the blog list, the feed and link previews. Factual, taken from the post. |
-| `tags` | A few lowercase tags, reusing the ones existing posts use (validation, mapping, docker, performance, release, terminology, ai). |
+| `tags` | A few lowercase tags, reusing the ones existing posts use (validation, mapping, docker, performance, release, terminology, telemetry, ips, connectathon, ai). |
 | `matchbox` | The release the post is about, if there is one (e.g. `4.1.18`). |
 | `original` | The URL where the post first appeared, if it was published elsewhere first. The build then shows "Originally published on …" and points the canonical URL there. |
 | `source` | URLs the author gave you to read. Keep the field; it is not rendered. |
@@ -58,9 +58,26 @@ Always, also when the text stays unchanged:
 - Do not change the meaning of a sentence the author wrote. Corrections of obvious typos are fine; list them.
 - Check that links are well-formed. A link to `https://www.matchbox.health/...` may become a site path
   (`/blog/`, `/features/`).
+- A post that names implementation guides, products, organisations or Matchbox settings without linking them
+  may get links, also when the text stays unchanged: a link does not change the wording. Add a link only when
+  you know the URL from the post, its `source` or the Matchbox documentation (`https://ahdis.github.io/matchbox/`),
+  link each thing once, at its first mention, and list every added link in the PR comment. `WebFetch` tells you
+  whether a page exists and what it is about; if it cannot open a page, do not link it. Where you are not sure,
+  propose the link in the PR comment instead of adding it.
 - Images go to `docs/assets/img/blog/<year>/<slug>/` and are referenced as `/assets/img/blog/<year>/<slug>/<file>`
   with a meaningful alt text.
 - Delete the notes-for-the-agent comment once you have acted on it (the build strips comments anyway).
+
+### Guest articles
+
+A post by someone outside ahdis is a guest article. The notes or the PR say so.
+
+- Keep the author's text, also without a "keep the text unchanged" note: fix the format, the front matter and
+  the image paths, and list typo corrections. The rules for editing above do not apply.
+- The post starts with the line `*Guest article by [Full Name](https://github.com/<handle>), [Organisation](<url>)*`.
+  Leave out a link you do not have.
+- The `summary` says that it is a guest article and names the author and the organisation.
+- People the author thanks by name are linked only with a URL the author or the PR gives.
 
 Sources: `WebFetch` returns a summary of a page, not its exact text. To republish an article word for word, the
 author has to paste it into the post; ask for that in the PR comment instead of reconstructing it from a summary.

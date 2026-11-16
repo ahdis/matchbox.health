@@ -67,6 +67,13 @@ footer once there is at least one post.
 5. Merge once the Check is green; `main` does not accept a merge before. The
    post is live about 30 seconds later.
 
+A post that is already finished, for example one prepared in a local Claude Code
+session with the build run and `docs/` committed, still gets the agent's first
+pass when the PR is opened or marked ready for review. Keep a notes comment
+that says "keep the text unchanged, only check and build": the agent then only
+removes the comment and reports. That commit needs **Approve and run**; a
+later commit pushed by a person gets its Check without approval.
+
 A post that first appeared elsewhere sets `original:`. It then says
 "Originally published on …", its canonical URL points to the original, and it
 is left out of `sitemap.xml`.
