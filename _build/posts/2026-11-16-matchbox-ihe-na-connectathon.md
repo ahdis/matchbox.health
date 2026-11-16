@@ -2,6 +2,7 @@
 title: "One verdict for IPS and ODH: a Connectathon validator built on Matchbox"
 date: 2026-11-16
 author: Youssef Bouij
+github: YoussefBouij
 summary: "At the IHE North America Connectathon, the team of Prometheus Computing built a web validator on top of Matchbox that checks an International Patient Summary document and the Occupational Data for Health observations inside it in one run, with one verdict. In this guest article, Youssef Bouij describes what they built, what worked well and what they learned."
 tags: [validation, ips, connectathon]
 ---
