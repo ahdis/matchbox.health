@@ -7,7 +7,7 @@ author: ""                 # full name
 github: ""                 # GitHub handle, without @
 summary: ""                # 1-2 sentences: blog list, feed and link previews. The blog list
                            # adds a "Read more" link after it; don't write one yourself.
-tags: []                   # e.g. validation, mapping, docker, performance, release, terminology, ai
+tags: []                   # e.g. validation, mapping, docker, performance, release, terminology, telemetry, ips, connectathon, ai
                            # Shown as plain labels, not links.
 matchbox: ""               # optional: the Matchbox release the post is about, e.g. 4.1.18
 original: ""               # optional: URL where the post first appeared. Renders "Originally

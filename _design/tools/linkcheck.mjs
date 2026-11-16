@@ -2,7 +2,7 @@
    home page, so new pages (blog posts) are covered without a list to keep up
    to date. Exits non-zero on any failure, for CI. */
 import { chromium } from 'playwright';
-const BASE = 'http://localhost:8081';
+const BASE = process.env.LOCAL || 'http://localhost:8081';
 const SEEDS = ['/', '/404.html'];
 const b = await chromium.launch();
 const internal = new Set(), external = new Set(), failed = [], visited = new Set();
