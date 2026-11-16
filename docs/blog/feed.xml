@@ -11,7 +11,68 @@
   <webfeeds:icon>https://www.matchbox.health/assets/img/feed-icon.png</webfeeds:icon>
   <webfeeds:cover image="https://www.matchbox.health/assets/img/social-card.png"/>
   <webfeeds:accentColor>3d5c73</webfeeds:accentColor>
-  <updated>2026-10-19T00:00:00Z</updated>
+  <updated>2026-11-16T00:00:00Z</updated>
+  <entry>
+    <title>One verdict for IPS and ODH: a Connectathon validator built on Matchbox</title>
+    <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/2026/matchbox-ihe-na-connectathon/"/>
+    <id>https://www.matchbox.health/blog/2026/matchbox-ihe-na-connectathon/</id>
+    <published>2026-11-16T00:00:00Z</published>
+    <updated>2026-11-16T00:00:00Z</updated>
+    <author><name>Youssef Bouij</name></author>
+    <summary>At the IHE North America Connectathon, the team of Prometheus Computing built a web validator on top of Matchbox that checks an International Patient Summary document and the Occupational Data for Health observations inside it in one run, with one verdict. In this guest article, Youssef Bouij describes what they built, what worked well and what they learned.</summary>
+    <content type="html">&lt;p&gt;&lt;em&gt;Guest article by &lt;a href=&quot;https://github.com/YoussefBouij&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Youssef Bouij&lt;/a&gt;, &lt;a href=&quot;https://prometheuscomputing.com/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Prometheus Computing&lt;/a&gt;&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;In October 2026 our team took part in the &lt;a href=&quot;https://www.ihe.net/testing/connectathon/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;IHE North America Connectathon&lt;/a&gt;, on the &amp;quot;IPS and secondary use&amp;quot; track. The track tests &lt;a href=&quot;https://hl7.org/fhir/uv/ips/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;International Patient Summary&lt;/a&gt; documents that carry Occupational Data for Health (ODH) observations in their Social history section: a patient&#x27;s usual work, past or present jobs, employment status, retirement date and combat zone periods.&lt;/p&gt;
+&lt;p&gt;Testers on the track had a practical problem. An IPS document with ODH inside has to satisfy two implementation guides at once, and the two guides are published by different organisations on different schedules. Checking a document meant running it against IPS, then pulling out each occupational observation and checking it against the right ODH profile, then putting the two answers together by hand.&lt;/p&gt;
+&lt;p&gt;We built a small web validator during the week to do that in one click. Matchbox does all of the validation. This article describes what we built on top of it and what made Matchbox a good base for it.&lt;/p&gt;
+&lt;h2 id=&quot;what-the-tool-does&quot;&gt;What the tool does&lt;/h2&gt;
+&lt;p&gt;You paste or upload a FHIR document, pick the guides, and press Validate. The tool gives one report with one verdict.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-ihe-na-connectathon/01-ips-odh-combined-check.png&quot; alt=&quot;The combined IPS and ODH check on the IHE FIIO example document&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;The combined IPS and ODH check on the &lt;a href=&quot;https://profiles.ihe.net/PCC/FIIO/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;IHE FIIO&lt;/a&gt; example document. One verdict, the profiles and engines used, and what was found in the bundle.&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;Behind that one click there are two Matchbox calls:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;The whole document is validated against the IPS Bundle profile, in the engine that has IPS 2.0.1 loaded.&lt;/li&gt;
+&lt;li&gt;The tool finds the Composition and its Social history section, recognises the ODH observations by their LOINC codes or declared profiles, and has each one validated against its own ODH profile, in the engine that has the ODH guide loaded.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The report adds the two results together and lists the findings by their place in the document. Each ODH observation gets its own group, with a link to the line in the editor where the entry starts.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-ihe-na-connectathon/02-odh-entry-findings.png&quot; alt=&quot;Findings for one ODH observation, with the entry highlighted in the editor&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Findings for one Past or present job observation. Clicking a line number jumps to that entry in the document.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id=&quot;checking-each-resource-on-its-own&quot;&gt;Checking each resource on its own&lt;/h2&gt;
+&lt;p&gt;Midway through the week the track lead asked for a second way of looking at a document: every entry checked against the profile the guide intends for it, whether or not the entry declares that profile.&lt;/p&gt;
+&lt;p&gt;For this the tool reads the guide&#x27;s Composition profile to learn which profile each section expects, and chooses a profile for every entry: by the section that references it, by its code or category where a section allows several profiles, and for supporting resources (a Medication, a Device, the Patient) by the entry that points at them. It adds those profiles to a copy of the bundle and sends the copy to Matchbox once. Because the entries travel together, references between them still resolve. The findings come back grouped by section.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-ihe-na-connectathon/03-each-resource-by-section.png&quot; alt=&quot;Each entry checked against its own profile, grouped by section&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Each entry checked against the profile chosen for it, grouped by section in the order of the guide. The original document is never changed.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id=&quot;several-guides-one-server&quot;&gt;Several guides, one server&lt;/h2&gt;
+&lt;p&gt;This is where Matchbox helped us most. A single Matchbox server held every guide the track needed: the International Patient Summary, the &lt;a href=&quot;https://profiles.ihe.net/PCC/ODH/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;IHE ODH guide&lt;/a&gt;, and later the &lt;a href=&quot;https://hl7.org/fhir/us/pcs/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;US&lt;/a&gt; and &lt;a href=&quot;https://simplifier.net/packages/ca.infoway.io.psca/0.0.4&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Canadian&lt;/a&gt; patient summaries and the &lt;a href=&quot;https://hl7.org/fhir/us/odh/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;US ODH guide&lt;/a&gt;. The ODH guide was still changing during the week, and Matchbox could load it straight from its &lt;a href=&quot;https://build.fhir.org/ig/IHE/PCC.ODH/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;latest build&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Matchbox keeps each guide in its own validation engine, and every check names the guide it should use. So a tester always knows exactly which guide and version their document was judged against, even when two versions of a guide sit on the same server.&lt;/p&gt;
+&lt;p&gt;When the track asked mid-week for the US and Canadian guides, adding them to Matchbox took a few minutes. Most of our time went into the user interface, where the tester picks a patient summary guide and an ODH guide, and every button and report is named after that choice.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-ihe-na-connectathon/04-guide-pickers-us-pcs.png&quot; alt=&quot;The same tool switched to US PCS and US ODH&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;The same tool switched to HL7 US Patient Care Summary and US ODH.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id=&quot;reports-testers-can-hand-over&quot;&gt;Reports testers can hand over&lt;/h2&gt;
+&lt;p&gt;Connectathon testers need something to attach to a test record. Every check can be downloaded as a single HTML file, laid out like the &lt;a href=&quot;https://gazelle.ihe.net/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Gazelle&lt;/a&gt; validation report that participants already know. It names the document and its SHA-256, the profiles, the engines and their versions, whether codes were checked against the terminology server, and who ran it. The same content is available as JSON, with the OperationOutcomes inside.&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;https://www.matchbox.health/assets/img/blog/2026/matchbox-ihe-na-connectathon/05-downloaded-html-report.png&quot; alt=&quot;The downloaded HTML report&quot; loading=&quot;lazy&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;The downloaded report. One self-contained file with no scripts.&lt;/em&gt;&lt;/p&gt;
+&lt;h2 id=&quot;what-worked-well&quot;&gt;What worked well&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Speed.&lt;/strong&gt; A full IPS bundle with six ODH observations validates in about half a second on a laptop, both engines included. People could fix a document and check it again without waiting.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Packaging.&lt;/strong&gt; The &lt;a href=&quot;https://ahdis.github.io/matchbox/docker/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;official Docker image&lt;/a&gt;, one YAML file and a volume for the downloaded packages were all we needed. We could give the track lead a zip that runs with &lt;code&gt;docker compose up&lt;/code&gt; and nothing else installed.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Continuous builds.&lt;/strong&gt; &lt;a href=&quot;https://ahdis.github.io/matchbox/matchbox-server/#implementationguides&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Loading a package by URL&lt;/a&gt; let us test against a guide that was still changing during the week.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The same engine as the official portal.&lt;/strong&gt; The Gazelle validation portal at the Connectathon is also backed by Matchbox, so a result in our tool and a result in the portal came from the same engine.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Locking it down.&lt;/strong&gt; With &lt;a href=&quot;https://ahdis.github.io/matchbox/matchbox-server/#read-only&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;&lt;code&gt;httpReadOnly: true&lt;/code&gt;&lt;/a&gt; the server still validates, but nobody on the event network can install or remove packages.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&quot;what-we-learned&quot;&gt;What we learned&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Plan memory for the number of engines. Seven engines use about 4 GB, and we give the container 7 GB.&lt;/li&gt;
+&lt;li&gt;When more than one version of a guide is loaded, always pass &lt;a href=&quot;https://ahdis.github.io/matchbox/validation/#fhir-api&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;&lt;code&gt;ig&lt;/code&gt;&lt;/a&gt;. A profile URL alone is not enough to say which version you mean.&lt;/li&gt;
+&lt;li&gt;An empty &lt;code&gt;&amp;quot;meta&amp;quot;: {}&lt;/code&gt; is rejected, so when the tool removes a declared profile from its working copy it removes the whole element.&lt;/li&gt;
+&lt;li&gt;Bundle link findings report entry positions counting from 1, while the other findings count from 0. We handle both when we map a finding back to a line in the editor.&lt;/li&gt;
+&lt;li&gt;Published examples are good test inputs, and some of them do not pass their own guide. That is worth knowing before a tester assumes the mistake is theirs.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&quot;thank-you&quot;&gt;Thank you&lt;/h2&gt;
+&lt;p&gt;At Prometheus Computing we build standards and interoperability testing tools for immunization, lab reporting, syndromic surveillance and CDA. FHIR validation was newer ground for us, and Matchbox let a small team deliver something useful within the week of the event. Thank you to Oliver Egger and the ahdis team for building it and keeping it open, and to &lt;a href=&quot;https://github.com/matt-blackmon&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Matt Blackmon&lt;/a&gt; of &lt;a href=&quot;https://sequoiaproject.org/&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;The Sequoia Project&lt;/a&gt;, who pointed us to the right version and saved us a good deal of time.&lt;/p&gt;
+</content>
+    <media:content url="https://www.matchbox.health/assets/img/social-card.png" medium="image" type="image/png" width="1200" height="630"/>
+    <media:thumbnail url="https://www.matchbox.health/assets/img/social-card.png" width="1200" height="630"/>
+  </entry>
   <entry>
     <title>Monitoring Matchbox with OpenTelemetry</title>
     <link rel="alternate" type="text/html" href="https://www.matchbox.health/blog/2026/matchbox-opentelemetry/"/>
